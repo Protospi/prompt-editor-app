@@ -6,8 +6,8 @@
         <!-- Simple formatting toolbar -->
         <q-card-section class="formatting-toolbar q-py-sm bg-grey-2">
           <div class="row items-center">
-            <q-btn flat dense size="md" icon="format_bold" @click="applyFormat('bold')" class="q-mr-xs" />
-            <q-btn flat dense size="md" icon="format_list_bulleted" @click="applyFormat('insertUnorderedList')" class="q-mr-xs" />
+            <q-btn flat dense size="md" icon="format_bold" @click="applyFormat('bold')" class="title-button q-mr-xs" />
+            <q-btn flat dense size="md" icon="format_list_bulleted" @click="applyFormat('insertUnorderedList')" class="title-button q-mr-xs" />
             
             <!-- Color dropdown -->
             <q-btn-dropdown 
@@ -15,7 +15,7 @@
               dense 
               size="md" 
               icon="format_color_text" 
-              class="q-mr-xs"
+              class="title-button q-mr-xs"
               @show="saveSelection"
             >
               <q-list>
@@ -23,7 +23,7 @@
                   <q-item-section>
                     <div class="row items-center">
                       <div class="color-swatch" style="background-color: #6467F2"></div>
-                      <div class="q-ml-sm">Purple (#6467F2)</div>
+                      <div class="q-ml-sm">Purple</div>
                     </div>
                   </q-item-section>
                 </q-item>
@@ -69,7 +69,8 @@
               flat 
               dense
               no-caps
-              label="Tt"
+              label="T"
+              size="lg"
               class="title-button q-mr-xs"
               @click="formatAsTitle"
               >
