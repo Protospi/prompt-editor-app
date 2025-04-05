@@ -64,8 +64,6 @@
                 </q-list>
               </q-btn-dropdown>
               
-              <q-separator vertical inset class="q-mx-sm" />
-              
               <!-- Title button -->
               <q-btn 
                 flat 
@@ -78,6 +76,34 @@
                 >
                 <q-tooltip>Format line as title</q-tooltip>
               </q-btn>
+
+              <q-separator vertical inset class="q-mx-sm" />
+              
+              <!-- New Prompt button -->
+              <q-btn 
+                flat 
+                dense
+                icon="delete"
+                size="md"
+                class="title-button q-mr-xs"
+                @click="resetEditor"
+              >
+                <q-tooltip>Reset prompt</q-tooltip>
+              </q-btn>
+
+              <!-- Ai button -->
+              <q-btn 
+                flat 
+                dense
+                no-caps
+                label="AI"
+                size="lg"
+                class="title-button q-mr-xs"  
+                @click="openAiModal"
+              >
+                <q-tooltip>Open AI modal</q-tooltip>
+              </q-btn>
+
             </div>
             
             <!-- Right side version controls -->
@@ -218,6 +244,71 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+    
+    <!-- AI Assistant Modal -->
+    <q-dialog v-model="aiModalOpen" persistent>
+      <q-card style="width: 700px; max-width: 90vw;">
+        <q-card-section class="row items-center bg-primary text-white">
+          <div class="text-h6"><q-icon name="smart_toy" class="q-mr-sm" /> AI Prompt Assistant</div>
+          <q-space />
+          <q-btn icon="close" flat round dense v-close-popup />
+        </q-card-section>
+        
+        <q-card-section class="q-pt-md">
+          <p class="text-subtitle1">Describe the prompt you'd like to create:</p>
+          <p class="text-caption text-grey-8">
+            Example: "I need a prompt that helps a language model act as a coding tutor for beginners" 
+            or "Create a prompt for a storytelling assistant that creates children's stories"
+          </p>
+          
+          <q-input
+            v-model="aiPromptInput"
+            type="textarea"
+            autofocus
+            outlined
+            rows="6"
+            label="Your instructions"
+            :disable="isProcessingAiRequest"
+          />
+        </q-card-section>
+        
+        <q-card-actions align="right" class="bg-grey-2 q-pa-md">
+          <q-btn 
+            label="Cancel" 
+            color="negative" 
+            v-close-popup 
+            :disable="isProcessingAiRequest" 
+            flat
+          />
+          <q-btn 
+            label="Generate Prompt Template" 
+            color="primary" 
+            :loading="isProcessingAiRequest"
+            :disable="!aiPromptInput.trim()"
+            @click="submitAiPrompt"
+          >
+            <template v-slot:loading>
+              <q-spinner-dots />
+            </template>
+          </q-btn>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+    
+    <!-- New Prompt Confirmation Dialog -->
+    <q-dialog v-model="newPromptDialog.show" persistent>
+      <q-card>
+        <q-card-section class="row items-center">
+          <q-avatar icon="warning" color="warning" text-color="white" />
+          <span class="q-ml-sm">You have unsaved changes. Creating a new prompt will discard these changes.</span>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn flat label="Discard Changes" color="negative" @click="confirmNewPrompt" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
@@ -252,13 +343,25 @@ const markdownOutput = ref('');
 // Store text selection for color change
 const savedSelection = ref<Range | null>(null);
 
+// AI Modal state
+const aiModalOpen = ref(false);
+const aiPromptInput = ref('');
+const isProcessingAiRequest = ref(false);
+
 // Version management
 const promptVersions = ref<(PromptVersion | null)[]>([null, null, null]);
 const currentVersionIndex = ref<number | null>(null);
 const lastSavedContent = ref<string>('');
 const hasUnsavedChanges = computed(() => {
-  // If no content has been saved yet, allow saving
-  if (currentVersionIndex.value === null) return markdownOutput.value !== '<p>Comece a escrever seu prompt aqui...</p>';
+  // If no version is currently selected
+  if (currentVersionIndex.value === null) {
+    // Check if the content is different from the sample text
+    const isNotInitialContent = markdownOutput.value !== turndownService.turndown('<p>Comece a escrever seu prompt aqui...</p>');
+    // Check if it's different from the last saved content (handles AI suggestions case)
+    const isDifferentFromLastSaved = markdownOutput.value !== lastSavedContent.value;
+    
+    return isNotInitialContent || isDifferentFromLastSaved;
+  }
   
   // Otherwise, check if content has changed since last save
   return markdownOutput.value !== lastSavedContent.value;
@@ -275,6 +378,10 @@ const overwriteDialog = ref({
   show: false,
   selectedIndex: 0,
   options: [] as { label: string; value: number }[]
+});
+
+const newPromptDialog = ref({
+  show: false
 });
 
 // Computed properties
@@ -540,12 +647,120 @@ const renameVersion = () => {
   }
 };
 
+// Open AI Modal
+const openAiModal = () => {
+  aiModalOpen.value = true;
+  aiPromptInput.value = '';
+};
+
+// Submit AI prompt request
+const submitAiPrompt = () => {
+  if (!aiPromptInput.value.trim()) {
+    $q.notify({
+      color: 'negative',
+      message: 'Please enter a prompt',
+      icon: 'warning'
+    });
+    return;
+  }
+  
+  isProcessingAiRequest.value = true;
+  
+  // This is a temporary mock function that will be replaced with an actual API call
+  setTimeout(() => {
+    // Mock response with a formatted prompt template
+    const mockResponse = {
+      prompt: "######Persona \n Template for persona \n ######Instructions: "
+    };
+    
+    // Apply the response to the editor
+    applyAiGeneratedPrompt(mockResponse.prompt);
+    
+    // Close the modal and reset state
+    aiModalOpen.value = false;
+    isProcessingAiRequest.value = false;
+    
+    $q.notify({
+      color: 'positive',
+      message: 'AI template generated successfully. Click "Save Version" to save it.',
+      icon: 'check'
+    });
+  }, 1500); // Simulate a network delay
+};
+
+// Apply the AI generated prompt to the editor
+const applyAiGeneratedPrompt = (markdownText: string) => {
+  if (!editorEl.value) return;
+  
+  // Convert markdown to HTML
+  // For a simple implementation, we'll handle the basic markdown formatting patterns
+  // This would ideally use a more robust markdown-to-html converter
+  const htmlContent = markdownText
+    // Convert headers
+    .replace(/#{6} ?(.+)/g, '<h6>$1</h6>')
+    // Convert bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Convert italics
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Convert new lines to paragraphs
+    .split('\n').map(line => line.trim() ? `<p>${line}</p>` : '').join('');
+  
+  // Set the content
+  editorEl.value.innerHTML = htmlContent;
+  
+  // Update the markdown output
+  updateMarkdown();
+  
+  // Don't set lastSavedContent here so the AI suggestion will be treated as an unsaved change
+  // This allows users to save the AI-generated content if they want to
+};
+
+// Reset editor to a blank state
+const resetEditor = () => {
+  // Check for unsaved changes
+  if (hasUnsavedChanges.value) {
+    // Show confirmation dialog
+    newPromptDialog.value.show = true;
+    return;
+  }
+  
+  // If no unsaved changes, proceed directly
+  performReset();
+};
+
+// Actual reset function that gets called after confirmation
+const confirmNewPrompt = () => {
+  performReset();
+};
+
+// Common reset implementation
+const performReset = () => {
+  if (!editorEl.value) return;
+  
+  // Reset to initial blank state
+  editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+  updateMarkdown();
+  
+  // Reset version tracking
+  currentVersionIndex.value = null;
+  lastSavedContent.value = markdownOutput.value;
+  
+  $q.notify({
+    color: 'info',
+    message: 'Editor reset to blank state',
+    icon: 'refresh'
+  });
+};
+
 // Initialize the editor
 onMounted(() => {
   if (editorEl.value) {
     // Initialize with a sample prompt
     editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
     updateMarkdown();
+    
+    // Set the initial content as the last saved content
+    lastSavedContent.value = markdownOutput.value;
   }
 });
 </script>
