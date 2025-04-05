@@ -83,7 +83,7 @@
               <q-btn 
                 flat 
                 dense
-                icon="delete"
+                icon="add"
                 size="md"
                 class="title-button q-mr-xs"
                 @click="resetEditor"
@@ -95,11 +95,9 @@
               <q-btn 
                 flat 
                 dense
-                no-caps
-                :label="aiModeActive ? 'Editor' : 'AI'"
-                :color="aiModeActive ? 'positive' : 'grey-8'"
-                :icon="aiModeActive ? 'edit' : 'smart_toy'"
+                :icon="aiModeActive ? 'edit' : 'auto_awesome'"
                 size="md"
+                :color="aiModeActive ? 'positive' : '#6467F2'"
                 class="title-button q-mr-xs"  
                 @click="toggleAiMode"
               >
@@ -134,9 +132,12 @@
                           <div>{{ version.name }}</div>
                         </div>
                       </q-item-section>
-                      <q-item-section side>
+                      <q-item-section side class="row no-wrap">
                         <q-btn flat round dense icon="edit" size="xs" @click.stop="promptForRename(index)">
                           <q-tooltip>Rename</q-tooltip>
+                        </q-btn>
+                        <q-btn flat round dense icon="delete" size="xs" color="negative" @click.stop="promptForDelete(index)">
+                          <q-tooltip>Delete version</q-tooltip>
                         </q-btn>
                       </q-item-section>
                     </q-item>
@@ -148,14 +149,13 @@
               <q-btn 
                 flat 
                 dense 
-                color="positive" 
+                :color="hasUnsavedChanges && !allSlotsFilled ? 'positive' : 'grey-6'" 
                 icon="save" 
-                label="Save Version" 
                 @click="saveVersion"
                 class="save-version-btn"
-                :disable="!hasUnsavedChanges"
+                :disable="!hasUnsavedChanges || allSlotsFilled"
               >
-                <q-tooltip>Save current prompt as a version</q-tooltip>
+                <q-tooltip>{{ getSaveButtonTooltip() }}</q-tooltip>
               </q-btn>
             </div>
           </div>
@@ -278,30 +278,6 @@
       </q-card>
     </q-dialog>
     
-    <!-- Dialog for selecting which version to overwrite -->
-    <q-dialog v-model="overwriteDialog.show" persistent>
-      <q-card style="min-width: 350px">
-        <q-card-section>
-          <div class="text-h6">All Version Slots Are Filled</div>
-        </q-card-section>
-        
-        <q-card-section>
-          <p>Choose which version to overwrite:</p>
-          <q-option-group
-            v-model="overwriteDialog.selectedIndex"
-            :options="overwriteDialog.options"
-            color="primary"
-            type="radio"
-          />
-        </q-card-section>
-        
-        <q-card-actions align="right">
-          <q-btn flat label="Cancel" color="negative" v-close-popup />
-          <q-btn flat label="Overwrite" color="primary" @click="confirmOverwrite" v-close-popup />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-    
     <!-- New Prompt Confirmation Dialog -->
     <q-dialog v-model="newPromptDialog.show" persistent>
       <q-card>
@@ -313,6 +289,26 @@
         <q-card-actions align="right">
           <q-btn flat label="Cancel" color="primary" v-close-popup />
           <q-btn flat label="Discard Changes" color="negative" @click="confirmNewPrompt" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+    
+    <!-- Delete Confirmation Dialog -->
+    <q-dialog v-model="deleteDialog.show" persistent>
+      <q-card>
+        <q-card-section class="row items-center">
+          <q-avatar icon="warning" color="negative" text-color="white" />
+          <span class="q-ml-sm">
+            Are you sure you want to delete "{{ deleteDialog.versionName }}"?
+            <span v-if="deleteDialog.isCurrentVersion" class="text-negative">
+              <br>This will reset the editor since it's the currently displayed version.
+            </span>
+          </span>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn flat label="Delete" color="negative" @click="confirmDelete" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -356,7 +352,7 @@ const aiPromptInput = ref('');
 const isProcessingAiRequest = ref(false);
 
 // Version management
-const promptVersions = ref<(PromptVersion | null)[]>([null, null, null]);
+const promptVersions = ref<(PromptVersion | null)[]>([null, null, null, null, null]);
 const currentVersionIndex = ref<number | null>(null);
 const lastSavedContent = ref<string>('');
 const hasUnsavedChanges = computed(() => {
@@ -381,14 +377,15 @@ const renameDialog = ref({
   newName: ''
 });
 
-const overwriteDialog = ref({
-  show: false,
-  selectedIndex: 0,
-  options: [] as { label: string; value: number }[]
-});
-
 const newPromptDialog = ref({
   show: false
+});
+
+const deleteDialog = ref({
+  show: false,
+  index: 0,
+  versionName: '',
+  isCurrentVersion: false
 });
 
 // Computed properties
@@ -398,6 +395,24 @@ const currentVersionLabel = computed(() => {
   }
   return 'Unsaved Version';
 });
+
+// Add computed property for slot status
+const allSlotsFilled = computed(() => {
+  return !promptVersions.value.some(v => v === null);
+});
+
+// Get tooltip message for save button based on state
+const getSaveButtonTooltip = () => {
+  if (!hasUnsavedChanges.value) {
+    return 'Make changes to enable saving';
+  }
+  
+  if (allSlotsFilled.value) {
+    return 'Max 5 prompts reached. Delete a version to save new changes.';
+  }
+  
+  return 'Save current prompt as a version';
+};
 
 // Apply basic formatting
 const applyFormat = (command: string) => {
@@ -560,15 +575,25 @@ const getDefaultVersionName = (index: number): string => {
 };
 
 const saveVersion = () => {
-  // Check if all slots are filled
+  // Don't allow saving if there are no changes or all slots are filled
+  if (!hasUnsavedChanges.value || allSlotsFilled.value) {
+    return;
+  }
+  
+  // Check if all slots are filled - this is redundant now but kept for safety
   const emptySlotIndex = promptVersions.value.findIndex(v => v === null);
   
   if (emptySlotIndex !== -1) {
     // We have an empty slot, save to it
     createNewVersion(emptySlotIndex);
   } else {
-    // All slots are filled, ask which one to overwrite
-    showOverwriteDialog();
+    // This should not be reached due to the disable check, but kept for safety
+    $q.notify({
+      color: 'warning',
+      message: 'All slots are filled. Please delete a version first.',
+      icon: 'warning',
+      timeout: 3000
+    });
   }
 };
 
@@ -609,28 +634,6 @@ const loadVersion = (index: number) => {
   });
 };
 
-const showOverwriteDialog = () => {
-  overwriteDialog.value.options = promptVersions.value.map((version, index) => ({
-    label: version ? version.name : `Empty Slot ${index + 1}`,
-    value: index
-  }));
-  
-  // Default to suggesting the oldest version
-  const timestamps = promptVersions.value
-    .filter((v): v is PromptVersion => v !== null)
-    .map(v => new Date(v.timestamp).getTime());
-  
-  const oldestIndex = timestamps.indexOf(Math.min(...timestamps));
-  overwriteDialog.value.selectedIndex = oldestIndex >= 0 ? oldestIndex : 0;
-  
-  overwriteDialog.value.show = true;
-};
-
-const confirmOverwrite = () => {
-  const index = overwriteDialog.value.selectedIndex;
-  createNewVersion(index);
-};
-
 const promptForRename = (index: number) => {
   const version = promptVersions.value[index];
   if (!version) return;
@@ -652,6 +655,36 @@ const renameVersion = () => {
       icon: 'edit'
     });
   }
+};
+
+const promptForDelete = (index: number) => {
+  const version = promptVersions.value[index];
+  if (!version) return;
+  
+  deleteDialog.value.index = index;
+  deleteDialog.value.versionName = version.name;
+  deleteDialog.value.isCurrentVersion = index === currentVersionIndex.value;
+  deleteDialog.value.show = true;
+};
+
+const confirmDelete = () => {
+  const index = deleteDialog.value.index;
+  const isCurrentVersion = deleteDialog.value.isCurrentVersion;
+  
+  // Clear the version
+  promptVersions.value[index] = null;
+  
+  // If this is the current version, reset the editor
+  if (isCurrentVersion) {
+    performReset();
+  }
+  
+  $q.notify({
+    color: 'negative',
+    message: `Deleted ${deleteDialog.value.versionName}`,
+    icon: 'delete',
+    timeout: 2000
+  });
 };
 
 // Toggle AI mode
