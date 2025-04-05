@@ -5,77 +5,125 @@
       <q-card class="editor-card q-mt-md shadow-5">
         <!-- Simple formatting toolbar -->
         <q-card-section class="formatting-toolbar q-py-sm bg-grey-2">
-          <div class="row items-center">
-            <q-btn flat dense size="md" icon="format_bold" @click="applyFormat('bold')" class="title-button q-mr-xs" />
-            <q-btn flat dense size="md" icon="format_list_bulleted" @click="applyFormat('insertUnorderedList')" class="title-button q-mr-xs" />
-            
-            <!-- Color dropdown -->
-            <q-btn-dropdown 
-              flat 
-              dense 
-              size="md" 
-              icon="format_color_text" 
-              class="title-button q-mr-xs"
-              @show="saveSelection"
-            >
-              <q-list>
-                <q-item clickable v-close-popup @click="() => applyColor('#6467F2')">
-                  <q-item-section>
-                    <div class="row items-center">
-                      <div class="color-swatch" style="background-color: #6467F2"></div>
-                      <div class="q-ml-sm">Purple</div>
-                    </div>
-                  </q-item-section>
-                </q-item>
-                <q-item clickable v-close-popup @click="() => applyColor('#000000')">
-                  <q-item-section>
-                    <div class="row items-center">
-                      <div class="color-swatch" style="background-color: #000000"></div>
-                      <div class="q-ml-sm">Black</div>
-                    </div>
-                  </q-item-section>
-                </q-item>
-                <q-item clickable v-close-popup @click="() => applyColor('#FF0000')">
-                  <q-item-section>
-                    <div class="row items-center">
-                      <div class="color-swatch" style="background-color: #FF0000"></div>
-                      <div class="q-ml-sm">Red</div>
-                    </div>
-                  </q-item-section>
-                </q-item>
-                <q-item clickable v-close-popup @click="() => applyColor('#008000')">
-                  <q-item-section>
-                    <div class="row items-center">
-                      <div class="color-swatch" style="background-color: #008000"></div>
-                      <div class="q-ml-sm">Green</div>
-                    </div>
-                  </q-item-section>
-                </q-item>
-                <q-item clickable v-close-popup @click="() => applyColor('#FFA500')">
-                  <q-item-section>
-                    <div class="row items-center">
-                      <div class="color-swatch" style="background-color: #FFA500"></div>
-                      <div class="q-ml-sm">Orange</div>
-                    </div>
-                  </q-item-section>
-                </q-item>
-              </q-list>
-            </q-btn-dropdown>
-            
-            <q-separator vertical inset class="q-mx-sm" />
-            
-            <!-- Title button -->
-            <q-btn 
-              flat 
-              dense
-              no-caps
-              label="T"
-              size="lg"
-              class="title-button q-mr-xs"
-              @click="formatAsTitle"
+          <div class="row items-center justify-between">
+            <!-- Left side formatting tools -->
+            <div class="row items-center">
+              <q-btn flat dense size="md" icon="format_bold" @click="applyFormat('bold')" class="title-button q-mr-xs" />
+              <q-btn flat dense size="md" icon="format_list_bulleted" @click="applyFormat('insertUnorderedList')" class="title-button q-mr-xs" />
+              
+              <!-- Color dropdown -->
+              <q-btn-dropdown 
+                flat 
+                dense 
+                size="md" 
+                icon="format_color_text" 
+                class="title-button q-mr-xs"
+                @show="saveSelection"
               >
-              <q-tooltip>Format line as title</q-tooltip>
-            </q-btn>
+                <q-list>
+                  <q-item clickable v-close-popup @click="() => applyColor('#6467F2')">
+                    <q-item-section>
+                      <div class="row items-center">
+                        <div class="color-swatch" style="background-color: #6467F2"></div>
+                        <div class="q-ml-sm">Purple</div>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                  <q-item clickable v-close-popup @click="() => applyColor('#000000')">
+                    <q-item-section>
+                      <div class="row items-center">
+                        <div class="color-swatch" style="background-color: #000000"></div>
+                        <div class="q-ml-sm">Black</div>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                  <q-item clickable v-close-popup @click="() => applyColor('#FF0000')">
+                    <q-item-section>
+                      <div class="row items-center">
+                        <div class="color-swatch" style="background-color: #FF0000"></div>
+                        <div class="q-ml-sm">Red</div>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                  <q-item clickable v-close-popup @click="() => applyColor('#008000')">
+                    <q-item-section>
+                      <div class="row items-center">
+                        <div class="color-swatch" style="background-color: #008000"></div>
+                        <div class="q-ml-sm">Green</div>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                  <q-item clickable v-close-popup @click="() => applyColor('#FFA500')">
+                    <q-item-section>
+                      <div class="row items-center">
+                        <div class="color-swatch" style="background-color: #FFA500"></div>
+                        <div class="q-ml-sm">Orange</div>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                </q-list>
+              </q-btn-dropdown>
+              
+              <q-separator vertical inset class="q-mx-sm" />
+              
+              <!-- Title button -->
+              <q-btn 
+                flat 
+                dense
+                no-caps
+                label="T"
+                size="lg"
+                class="title-button q-mr-xs"
+                @click="formatAsTitle"
+                >
+                <q-tooltip>Format line as title</q-tooltip>
+              </q-btn>
+            </div>
+            
+            <!-- Right side version controls -->
+            <div class="row items-center">
+              <!-- Version selector dropdown -->
+              <q-btn-dropdown 
+                flat 
+                dense 
+                no-caps
+                :label="currentVersionLabel"
+                class="version-selector q-mr-sm"
+                color="primary"
+                icon="history"
+              >
+                <q-list>
+                  <template v-for="(version, index) in promptVersions" :key="index">
+                    <q-item v-if="version" clickable @click="loadVersion(index)">
+                      <q-item-section>
+                        <div class="row items-center">
+                          <q-icon name="bookmark" size="xs" class="q-mr-xs" v-if="index === currentVersionIndex" color="primary" />
+                          <div>{{ version.name }}</div>
+                        </div>
+                      </q-item-section>
+                      <q-item-section side>
+                        <q-btn flat round dense icon="edit" size="xs" @click.stop="promptForRename(index)">
+                          <q-tooltip>Rename</q-tooltip>
+                        </q-btn>
+                      </q-item-section>
+                    </q-item>
+                  </template>
+                </q-list>
+              </q-btn-dropdown>
+              
+              <!-- Save version button -->
+              <q-btn 
+                flat 
+                dense 
+                color="positive" 
+                icon="save" 
+                label="Save Version" 
+                @click="saveVersion"
+                class="save-version-btn"
+              >
+                <q-tooltip>Save current prompt as a version</q-tooltip>
+              </q-btn>
+            </div>
           </div>
         </q-card-section>
         
@@ -122,12 +170,66 @@
         </q-card-section>
       </q-card>
     </div>
+    
+    <!-- Dialog for renaming versions -->
+    <q-dialog v-model="renameDialog.show" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">Rename Version</div>
+        </q-card-section>
+        
+        <q-card-section>
+          <q-input v-model="renameDialog.newName" label="Version name" autofocus />
+        </q-card-section>
+        
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="negative" v-close-popup />
+          <q-btn flat label="Save" color="positive" @click="renameVersion" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+    
+    <!-- Dialog for selecting which version to overwrite -->
+    <q-dialog v-model="overwriteDialog.show" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">All Version Slots Are Filled</div>
+        </q-card-section>
+        
+        <q-card-section>
+          <p>Choose which version to overwrite:</p>
+          <q-option-group
+            v-model="overwriteDialog.selectedIndex"
+            :options="overwriteDialog.options"
+            color="primary"
+            type="radio"
+          />
+        </q-card-section>
+        
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="negative" v-close-popup />
+          <q-btn flat label="Overwrite" color="primary" @click="confirmOverwrite" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import turndown from 'turndown';
+import { useQuasar } from 'quasar';
+
+// Initialize Quasar
+const $q = useQuasar();
+
+// Types for the version system
+interface PromptVersion {
+  name: string;
+  timestamp: string;
+  content: string;
+  html: string;
+}
 
 // Initialize the Turndown service for HTML to Markdown conversion
 const turndownService = new turndown({
@@ -143,6 +245,31 @@ const markdownOutput = ref('');
 
 // Store text selection for color change
 const savedSelection = ref<Range | null>(null);
+
+// Version management
+const promptVersions = ref<(PromptVersion | null)[]>([null, null, null]);
+const currentVersionIndex = ref<number | null>(null);
+
+// Dialogs
+const renameDialog = ref({
+  show: false,
+  index: 0,
+  newName: ''
+});
+
+const overwriteDialog = ref({
+  show: false,
+  selectedIndex: 0,
+  options: [] as { label: string; value: number }[]
+});
+
+// Computed properties
+const currentVersionLabel = computed(() => {
+  if (currentVersionIndex.value !== null && promptVersions.value[currentVersionIndex.value]) {
+    return promptVersions.value[currentVersionIndex.value]?.name || 'Current Version';
+  }
+  return 'Unsaved Version';
+});
 
 // Apply basic formatting
 const applyFormat = (command: string) => {
@@ -262,6 +389,111 @@ const updateMarkdown = () => {
   }
 };
 
+// Version management functions
+const createTimestamp = (): string => {
+  const now = new Date();
+  const date = now.toLocaleDateString();
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${date} - ${time}`;
+};
+
+const getDefaultVersionName = (index: number): string => {
+  return `V${index + 1} [${createTimestamp()}]`;
+};
+
+const saveVersion = () => {
+  // Check if all slots are filled
+  const emptySlotIndex = promptVersions.value.findIndex(v => v === null);
+  
+  if (emptySlotIndex !== -1) {
+    // We have an empty slot, save to it
+    createNewVersion(emptySlotIndex);
+  } else {
+    // All slots are filled, ask which one to overwrite
+    showOverwriteDialog();
+  }
+};
+
+const createNewVersion = (index: number) => {
+  if (!editorEl.value) return;
+  
+  const version: PromptVersion = {
+    name: getDefaultVersionName(index),
+    timestamp: createTimestamp(),
+    content: markdownOutput.value,
+    html: editorEl.value.innerHTML
+  };
+  
+  promptVersions.value[index] = version;
+  currentVersionIndex.value = index;
+  
+  $q.notify({
+    color: 'positive',
+    message: `Saved as ${version.name}`,
+    icon: 'save'
+  });
+};
+
+const loadVersion = (index: number) => {
+  const version = promptVersions.value[index];
+  if (!version || !editorEl.value) return;
+  
+  editorEl.value.innerHTML = version.html;
+  updateMarkdown();
+  currentVersionIndex.value = index;
+  
+  $q.notify({
+    color: 'info',
+    message: `Loaded ${version.name}`,
+    icon: 'history'
+  });
+};
+
+const showOverwriteDialog = () => {
+  overwriteDialog.value.options = promptVersions.value.map((version, index) => ({
+    label: version ? version.name : `Empty Slot ${index + 1}`,
+    value: index
+  }));
+  
+  // Default to suggesting the oldest version
+  const timestamps = promptVersions.value
+    .filter((v): v is PromptVersion => v !== null)
+    .map(v => new Date(v.timestamp).getTime());
+  
+  const oldestIndex = timestamps.indexOf(Math.min(...timestamps));
+  overwriteDialog.value.selectedIndex = oldestIndex >= 0 ? oldestIndex : 0;
+  
+  overwriteDialog.value.show = true;
+};
+
+const confirmOverwrite = () => {
+  const index = overwriteDialog.value.selectedIndex;
+  createNewVersion(index);
+};
+
+const promptForRename = (index: number) => {
+  const version = promptVersions.value[index];
+  if (!version) return;
+  
+  renameDialog.value.index = index;
+  renameDialog.value.newName = version.name;
+  renameDialog.value.show = true;
+};
+
+const renameVersion = () => {
+  const { index, newName } = renameDialog.value;
+  const version = promptVersions.value[index];
+  
+  if (version && newName.trim()) {
+    version.name = newName.trim();
+    $q.notify({
+      color: 'positive',
+      message: 'Version renamed',
+      icon: 'edit'
+    });
+  }
+};
+
 // Initialize the editor
 onMounted(() => {
   if (editorEl.value) {
@@ -309,6 +541,15 @@ onMounted(() => {
   font-weight: bold;
   font-size: 16px;
   color: #6467F2;
+}
+
+/* Version control styling */
+.version-selector {
+  font-size: 14px;
+}
+
+.save-version-btn {
+  font-size: 14px;
 }
 
 /* Markdown sections */
