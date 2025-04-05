@@ -91,17 +91,19 @@
                 <q-tooltip>Reset prompt</q-tooltip>
               </q-btn>
 
-              <!-- Ai button -->
+              <!-- AI button -->
               <q-btn 
                 flat 
                 dense
                 no-caps
-                label="AI"
-                size="lg"
+                :label="aiModeActive ? 'Editor' : 'AI'"
+                :color="aiModeActive ? 'positive' : 'grey-8'"
+                :icon="aiModeActive ? 'edit' : 'smart_toy'"
+                size="md"
                 class="title-button q-mr-xs"  
-                @click="openAiModal"
+                @click="toggleAiMode"
               >
-                <q-tooltip>Open AI modal</q-tooltip>
+                <q-tooltip>{{ aiModeActive ? 'Return to editor' : 'Use AI assistant to help with your prompt' }}</q-tooltip>
               </q-btn>
 
             </div>
@@ -161,7 +163,9 @@
         
         <!-- Editor area -->
         <q-card-section class="editor-content">
+          <!-- Regular editor when AI mode is off -->
           <div 
+            v-if="!aiModeActive"
             ref="editorEl" 
             class="editor" 
             contenteditable="true" 
@@ -169,6 +173,59 @@
             @keydown="handleKeyDown"
             @keyup="updateMarkdown"
           ></div>
+          
+          <!-- AI editor mode when AI mode is on -->
+          <div v-else class="ai-editor-container">
+            <div class="text-subtitle1 q-mb-md">
+              <q-icon name="smart_toy" class="q-mr-xs" /> AI Prompt Assistant
+            </div>
+            
+            <p class="text-body2 q-mb-sm">Describe the prompt you'd like to create or edit:</p>
+            <p class="text-caption text-grey-8 q-mb-md">
+              Example: "I need a prompt that helps a language model act as a coding tutor for beginners" 
+              or "Create a prompt for a storytelling assistant that creates children's stories"
+            </p>
+            
+            <q-input
+              v-model="aiPromptInput"
+              type="textarea"
+              outlined
+              rows="12"
+              label="Your instructions"
+              placeholder="Describe what you want, and the AI will help create or refine your prompt..."
+              :disable="isProcessingAiRequest"
+              class="q-mb-md"
+              autofocus
+            />
+            
+            <!-- Action buttons at the bottom -->
+            <div class="row justify-end q-mt-md">
+              <q-btn 
+                label="Back to Editor" 
+                color="grey-7" 
+                @click="toggleAiMode"
+                :disable="isProcessingAiRequest" 
+                flat
+                class="q-mr-sm"
+                icon="arrow_back"
+              >
+                <q-tooltip>Return to the regular editor without changes</q-tooltip>
+              </q-btn>
+              <q-btn 
+                label="Generate Suggestion" 
+                color="primary" 
+                :loading="isProcessingAiRequest"
+                :disable="!aiPromptInput.trim()"
+                @click="submitAiPrompt"
+                icon-right="auto_awesome"
+              >
+                <template v-slot:loading>
+                  <q-spinner-dots />
+                </template>
+                <q-tooltip>Generate AI suggestions based on your instructions</q-tooltip>
+              </q-btn>
+            </div>
+          </div>
         </q-card-section>
       </q-card>
     </div>
@@ -245,56 +302,6 @@
       </q-card>
     </q-dialog>
     
-    <!-- AI Assistant Modal -->
-    <q-dialog v-model="aiModalOpen" persistent>
-      <q-card style="width: 700px; max-width: 90vw;">
-        <q-card-section class="row items-center bg-primary text-white">
-          <div class="text-h6"><q-icon name="smart_toy" class="q-mr-sm" /> AI Prompt Assistant</div>
-          <q-space />
-          <q-btn icon="close" flat round dense v-close-popup />
-        </q-card-section>
-        
-        <q-card-section class="q-pt-md">
-          <p class="text-subtitle1">Describe the prompt you'd like to create:</p>
-          <p class="text-caption text-grey-8">
-            Example: "I need a prompt that helps a language model act as a coding tutor for beginners" 
-            or "Create a prompt for a storytelling assistant that creates children's stories"
-          </p>
-          
-          <q-input
-            v-model="aiPromptInput"
-            type="textarea"
-            autofocus
-            outlined
-            rows="6"
-            label="Your instructions"
-            :disable="isProcessingAiRequest"
-          />
-        </q-card-section>
-        
-        <q-card-actions align="right" class="bg-grey-2 q-pa-md">
-          <q-btn 
-            label="Cancel" 
-            color="negative" 
-            v-close-popup 
-            :disable="isProcessingAiRequest" 
-            flat
-          />
-          <q-btn 
-            label="Generate Prompt Template" 
-            color="primary" 
-            :loading="isProcessingAiRequest"
-            :disable="!aiPromptInput.trim()"
-            @click="submitAiPrompt"
-          >
-            <template v-slot:loading>
-              <q-spinner-dots />
-            </template>
-          </q-btn>
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-    
     <!-- New Prompt Confirmation Dialog -->
     <q-dialog v-model="newPromptDialog.show" persistent>
       <q-card>
@@ -343,8 +350,8 @@ const markdownOutput = ref('');
 // Store text selection for color change
 const savedSelection = ref<Range | null>(null);
 
-// AI Modal state
-const aiModalOpen = ref(false);
+// AI Mode state
+const aiModeActive = ref(false);
 const aiPromptInput = ref('');
 const isProcessingAiRequest = ref(false);
 
@@ -647,10 +654,30 @@ const renameVersion = () => {
   }
 };
 
-// Open AI Modal
-const openAiModal = () => {
-  aiModalOpen.value = true;
-  aiPromptInput.value = '';
+// Toggle AI mode
+const toggleAiMode = () => {
+  // Toggle the mode
+  aiModeActive.value = !aiModeActive.value;
+  
+  if (aiModeActive.value) {
+    // Entering AI mode - reset AI input
+    aiPromptInput.value = '';
+  } else {
+    // Exiting AI mode without generating content
+    // Make sure the editor is visible and properly initialized
+    // This happens if the user cancels without generating content
+    setTimeout(() => {
+      // Add a small delay to ensure the DOM has updated
+      if (editorEl.value) {
+        // Force re-render of the editor if needed
+        const currentHtml = editorEl.value.innerHTML;
+        if (!currentHtml || currentHtml.trim() === '') {
+          editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+          updateMarkdown();
+        }
+      }
+    }, 0);
+  }
 };
 
 // Submit AI prompt request
@@ -658,7 +685,7 @@ const submitAiPrompt = () => {
   if (!aiPromptInput.value.trim()) {
     $q.notify({
       color: 'negative',
-      message: 'Please enter a prompt',
+      message: 'Please enter instructions for the AI',
       icon: 'warning'
     });
     return;
@@ -673,25 +700,27 @@ const submitAiPrompt = () => {
       prompt: "######Persona \n Template for persona \n ######Instructions: "
     };
     
-    // Apply the response to the editor
+    // First exit AI mode
+    aiModeActive.value = false;
+    
+    // Then apply the response to the editor (with a small delay to ensure DOM is ready)
     applyAiGeneratedPrompt(mockResponse.prompt);
     
-    // Close the modal and reset state
-    aiModalOpen.value = false;
+    // Reset the AI processing state
     isProcessingAiRequest.value = false;
     
     $q.notify({
       color: 'positive',
-      message: 'AI template generated successfully. Click "Save Version" to save it.',
-      icon: 'check'
+      message: 'AI suggestion applied to editor. Review and save as a version if you like it.',
+      icon: 'auto_awesome',
+      timeout: 3000,
+      position: 'top'
     });
   }, 1500); // Simulate a network delay
 };
 
 // Apply the AI generated prompt to the editor
 const applyAiGeneratedPrompt = (markdownText: string) => {
-  if (!editorEl.value) return;
-  
   // Convert markdown to HTML
   // For a simple implementation, we'll handle the basic markdown formatting patterns
   // This would ideally use a more robust markdown-to-html converter
@@ -705,14 +734,20 @@ const applyAiGeneratedPrompt = (markdownText: string) => {
     // Convert new lines to paragraphs
     .split('\n').map(line => line.trim() ? `<p>${line}</p>` : '').join('');
   
-  // Set the content
-  editorEl.value.innerHTML = htmlContent;
-  
-  // Update the markdown output
-  updateMarkdown();
-  
-  // Don't set lastSavedContent here so the AI suggestion will be treated as an unsaved change
-  // This allows users to save the AI-generated content if they want to
+  // Store the HTML content to be applied after AI mode is exited
+  // We need to use a short timeout to ensure the DOM has updated after exiting AI mode
+  setTimeout(() => {
+    if (!editorEl.value) return;
+    
+    // Set the content to the editor element
+    editorEl.value.innerHTML = htmlContent;
+    
+    // Manually update the markdown output to reflect the AI-generated content
+    updateMarkdown();
+    
+    console.log('AI content applied:', htmlContent);
+    console.log('Markdown updated:', markdownOutput.value);
+  }, 100);
 };
 
 // Reset editor to a blank state
@@ -868,5 +903,28 @@ onMounted(() => {
   border-radius: 4px;
   display: inline-block;
   border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* AI Editor styles */
+.ai-editor-container {
+  height: 100%;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-editor-container .text-subtitle1 {
+  font-weight: 500;
+  color: #6467F2;
+}
+
+.ai-editor-container .q-input {
+  flex-grow: 1;
+}
+
+/* Add a placeholder animation for the loading state */
+.ai-editor-container .q-spinner-dots {
+  font-size: 2em;
 }
 </style> 
