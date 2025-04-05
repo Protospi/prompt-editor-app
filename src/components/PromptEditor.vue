@@ -97,7 +97,12 @@
                     <q-item v-if="version" clickable @click="loadVersion(index)">
                       <q-item-section>
                         <div class="row items-center">
-                          <q-icon name="bookmark" size="xs" class="q-mr-xs" v-if="index === currentVersionIndex" color="primary" />
+                          <q-icon 
+                            :name="index === currentVersionIndex ? 'bookmark' : 'bookmark_border'" 
+                            size="xs" 
+                            class="q-mr-xs" 
+                            :color="index === currentVersionIndex ? 'primary' : 'grey-7'" 
+                          />
                           <div>{{ version.name }}</div>
                         </div>
                       </q-item-section>
@@ -120,6 +125,7 @@
                 label="Save Version" 
                 @click="saveVersion"
                 class="save-version-btn"
+                :disable="!hasUnsavedChanges"
               >
                 <q-tooltip>Save current prompt as a version</q-tooltip>
               </q-btn>
@@ -249,6 +255,14 @@ const savedSelection = ref<Range | null>(null);
 // Version management
 const promptVersions = ref<(PromptVersion | null)[]>([null, null, null]);
 const currentVersionIndex = ref<number | null>(null);
+const lastSavedContent = ref<string>('');
+const hasUnsavedChanges = computed(() => {
+  // If no content has been saved yet, allow saving
+  if (currentVersionIndex.value === null) return markdownOutput.value !== '<p>Start typing your prompt here...</p>';
+  
+  // Otherwise, check if content has changed since last save
+  return markdownOutput.value !== lastSavedContent.value;
+});
 
 // Dialogs
 const renameDialog = ref({
@@ -398,7 +412,7 @@ const createTimestamp = (): string => {
 };
 
 const getDefaultVersionName = (index: number): string => {
-  return `V${index + 1} [${createTimestamp()}]`;
+  return `V${index + 1} ( ${createTimestamp()} )`;
 };
 
 const saveVersion = () => {
@@ -426,6 +440,7 @@ const createNewVersion = (index: number) => {
   
   promptVersions.value[index] = version;
   currentVersionIndex.value = index;
+  lastSavedContent.value = markdownOutput.value;
   
   $q.notify({
     color: 'positive',
@@ -441,6 +456,7 @@ const loadVersion = (index: number) => {
   editorEl.value.innerHTML = version.html;
   updateMarkdown();
   currentVersionIndex.value = index;
+  lastSavedContent.value = version.content;
   
   $q.notify({
     color: 'info',
