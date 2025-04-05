@@ -258,7 +258,7 @@ const currentVersionIndex = ref<number | null>(null);
 const lastSavedContent = ref<string>('');
 const hasUnsavedChanges = computed(() => {
   // If no content has been saved yet, allow saving
-  if (currentVersionIndex.value === null) return markdownOutput.value !== '<p>Start typing your prompt here...</p>';
+  if (currentVersionIndex.value === null) return markdownOutput.value !== '<p>Comece a escrever seu prompt aqui...</p>';
   
   // Otherwise, check if content has changed since last save
   return markdownOutput.value !== lastSavedContent.value;
@@ -355,13 +355,43 @@ const formatAsTitle = () => {
       // Apply heading format
       document.execCommand('formatBlock', false, 'h6');
       
+      // Find the newly created h6 element to apply inline styles
+      const heading = selection.anchorNode;
+      if (heading && heading.nodeName === 'H6') {
+        // Apply custom styles directly to the element for very tight spacing
+        const headingEl = heading as HTMLElement;
+        
+        // Apply very aggressive spacing reduction
+        headingEl.style.marginTop = '0';
+        headingEl.style.marginBottom = '0';
+        headingEl.style.paddingTop = '0';
+        headingEl.style.paddingBottom = '0';
+        headingEl.style.lineHeight = '1.1';
+        
+        // Also adjust spacing of previous and next sibling paragraphs if they exist
+        if (headingEl.previousElementSibling && headingEl.previousElementSibling.tagName === 'P') {
+          const prevP = headingEl.previousElementSibling as HTMLElement;
+          prevP.style.marginBottom = '0';
+          prevP.style.paddingBottom = '0';
+        }
+        
+        if (headingEl.nextElementSibling && headingEl.nextElementSibling.tagName === 'P') {
+          const nextP = headingEl.nextElementSibling as HTMLElement;
+          nextP.style.marginTop = '0';
+          nextP.style.paddingTop = '0';
+        }
+      }
+      
       // Restore original selection
       selection.removeAllRanges();
       selection.addRange(range);
     }
   }
   
-  updateMarkdown();
+  // Add a small delay before updating markdown to ensure DOM changes are processed
+  setTimeout(() => {
+    updateMarkdown();
+  }, 0);
 };
 
 // Handle keydown events for tabs in lists
@@ -514,7 +544,7 @@ const renameVersion = () => {
 onMounted(() => {
   if (editorEl.value) {
     // Initialize with a sample prompt
-    editorEl.value.innerHTML = '<p>Start typing your prompt here...</p>';
+    editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
     updateMarkdown();
   }
 });
@@ -548,7 +578,12 @@ onMounted(() => {
   outline: none;
   font-family: 'Roboto', sans-serif;
   font-size: 16px;
-  line-height: 1.6;
+  line-height: 1.4;
+}
+
+.editor * {
+  margin-top: 0;
+  margin-bottom: 2px;
 }
 
 /* Title button styling */
@@ -588,13 +623,18 @@ onMounted(() => {
 .editor h6 {
   font-size: 18px;
   font-weight: bold;
-  margin-top: 8px;
-  margin-bottom: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.2;
   color: #6467F2;
 }
 
 .editor p {
-  margin-bottom: 8px;
+  margin-top: 0;
+  margin-bottom: 4px;
+  line-height: 1.4;
 }
 
 .editor ul {
