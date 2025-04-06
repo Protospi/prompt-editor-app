@@ -8,8 +8,22 @@
           <div class="row items-center justify-between">
             <!-- Left side formatting tools -->
             <div class="row items-center">
-              <q-btn flat dense size="md" icon="format_bold" @click="applyFormat('bold')" class="title-button q-mr-xs" />
+              <!-- Title button -->
+              <q-btn 
+                flat 
+                dense
+                no-caps
+                label="T"
+                size="lg"
+                class="title-button q-mr-xs"
+                @click="formatAsTitle"
+                >
+                <q-tooltip>Format line as title</q-tooltip>
+              </q-btn>
+              
               <q-btn flat dense size="md" icon="format_list_bulleted" @click="applyFormat('insertUnorderedList')" class="title-button q-mr-xs" />
+              
+              <q-btn flat dense size="md" icon="format_bold" @click="applyFormat('bold')" class="title-button q-mr-xs" />
               
               <!-- Color dropdown -->
               <q-btn-dropdown 
@@ -63,34 +77,9 @@
                   </q-item>
                 </q-list>
               </q-btn-dropdown>
-              
-              <!-- Title button -->
-              <q-btn 
-                flat 
-                dense
-                no-caps
-                label="T"
-                size="lg"
-                class="title-button q-mr-xs"
-                @click="formatAsTitle"
-                >
-                <q-tooltip>Format line as title</q-tooltip>
-              </q-btn>
 
               <q-separator vertical inset class="q-mx-sm" />
               
-              <!-- New Prompt button -->
-              <q-btn 
-                flat 
-                dense
-                icon="add"
-                size="md"
-                class="title-button q-mr-xs"
-                @click="resetEditor"
-              >
-                <q-tooltip>Reset prompt</q-tooltip>
-              </q-btn>
-
               <!-- AI button -->
               <q-btn 
                 flat 
@@ -108,6 +97,18 @@
             
             <!-- Right side version controls -->
             <div class="row items-center">
+              <!-- New Prompt button (moved to right side) -->
+              <q-btn 
+                flat 
+                dense
+                icon="add"
+                size="md"
+                class="title-button q-mr-xs"
+                @click="createNewPrompt"
+              >
+                <q-tooltip>Create new prompt document</q-tooltip>
+              </q-btn>
+              
               <!-- Version selector dropdown -->
               <q-btn-dropdown 
                 flat 
@@ -149,11 +150,11 @@
               <q-btn 
                 flat 
                 dense 
-                :color="hasUnsavedChanges && !allSlotsFilled ? 'positive' : 'grey-6'" 
+                :color="hasUnsavedChanges ? 'positive' : 'grey-6'" 
                 icon="save" 
                 @click="saveVersion"
                 class="save-version-btn"
-                :disable="!hasUnsavedChanges || allSlotsFilled"
+                :disable="!hasUnsavedChanges"
               >
                 <q-tooltip>{{ getSaveButtonTooltip() }}</q-tooltip>
               </q-btn>
@@ -293,7 +294,7 @@
 
         <q-card-actions align="right">
           <q-btn flat label="Cancel" color="primary" v-close-popup />
-          <q-btn flat label="Discard Changes" color="negative" @click="confirmNewPrompt" v-close-popup />
+          <q-btn flat label="Create New" color="negative" @click="confirmNewPrompt" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -412,11 +413,15 @@ const getSaveButtonTooltip = () => {
     return 'Make changes to enable saving';
   }
   
-  if (allSlotsFilled.value) {
-    return 'Max 5 prompts reached. Delete a version to save new changes.';
+  if (currentVersionIndex.value !== null) {
+    return 'Save changes to current version';
   }
   
-  return 'Save current prompt as a version';
+  if (allSlotsFilled.value) {
+    return 'All slots filled. Delete a version first.';
+  }
+  
+  return 'Save as a new version';
 };
 
 // Apply basic formatting
@@ -667,29 +672,63 @@ const getDefaultVersionName = (index: number): string => {
   return `V${index + 1} ( ${createTimestamp()} )`;
 };
 
+// Save current version (either update existing or create new if none exists)
 const saveVersion = () => {
-  // Don't allow saving if there are no changes or all slots are filled
-  if (!hasUnsavedChanges.value || allSlotsFilled.value) {
+  // Don't allow saving if there are no changes
+  if (!hasUnsavedChanges.value) {
     return;
   }
   
-  // Check if all slots are filled - this is redundant now but kept for safety
+  // If there's a current version, update it
+  if (currentVersionIndex.value !== null) {
+    updateCurrentVersion();
+    return;
+  }
+  
+  // Otherwise, this is a new prompt that hasn't been saved yet
+  // Check if all slots are filled before trying to save a new version
+  if (allSlotsFilled.value) {
+    $q.notify({
+      color: 'warning',
+      message: 'All slots are filled. Please delete a version first or update an existing one.',
+      icon: 'warning',
+      timeout: 3000
+    });
+    return;
+  }
+  
+  // Find the first empty slot
   const emptySlotIndex = promptVersions.value.findIndex(v => v === null);
   
   if (emptySlotIndex !== -1) {
     // We have an empty slot, save to it
     createNewVersion(emptySlotIndex);
-  } else {
-    // This should not be reached due to the disable check, but kept for safety
-    $q.notify({
-      color: 'warning',
-      message: 'All slots are filled. Please delete a version first.',
-      icon: 'warning',
-      timeout: 3000
-    });
   }
 };
 
+// Update the current version with the latest content
+const updateCurrentVersion = () => {
+  if (!editorEl.value || currentVersionIndex.value === null) return;
+  
+  const version = promptVersions.value[currentVersionIndex.value];
+  if (!version) return;
+  
+  // Update the version content
+  version.content = markdownOutput.value;
+  version.html = editorEl.value.innerHTML;
+  // We don't update the name or timestamp to preserve the version identity
+  
+  // Update saved content reference
+  lastSavedContent.value = markdownOutput.value;
+  
+  $q.notify({
+    color: 'positive',
+    message: `Updated ${version.name}`,
+    icon: 'save'
+  });
+};
+
+// Create a new version in the specified slot
 const createNewVersion = (index: number) => {
   if (!editorEl.value) return;
   
@@ -711,6 +750,7 @@ const createNewVersion = (index: number) => {
   });
 };
 
+// Load a version from the version list
 const loadVersion = (index: number) => {
   const version = promptVersions.value[index];
   if (!version || !editorEl.value) return;
@@ -856,7 +896,7 @@ const submitAiPrompt = async () => {
       
       $q.notify({
         color: 'positive',
-        message: 'AI suggestion applied to editor. Review and save as a version if you like it.',
+        message: 'AI suggestion applied to editor. Review and save if you like it.',
         icon: 'auto_awesome',
         timeout: 3000,
         position: 'top'
@@ -914,8 +954,8 @@ const applyAiGeneratedPrompt = (markdownText: string) => {
   }, 100);
 };
 
-// Reset editor to a blank state
-const resetEditor = () => {
+// Create a new prompt (replaces resetEditor)
+const createNewPrompt = () => {
   // Check for unsaved changes
   if (hasUnsavedChanges.value) {
     // Show confirmation dialog
@@ -940,14 +980,14 @@ const performReset = () => {
   editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
   updateMarkdown();
   
-  // Reset version tracking
+  // Reset version tracking - this makes it a new unsaved prompt
   currentVersionIndex.value = null;
   lastSavedContent.value = markdownOutput.value;
   
   $q.notify({
     color: 'info',
-    message: 'Editor reset to blank state',
-    icon: 'refresh'
+    message: 'Created new blank prompt',
+    icon: 'add'
   });
 };
 
@@ -1047,6 +1087,9 @@ onMounted(() => {
       
       // Set the initial content as the last saved content
       lastSavedContent.value = markdownOutput.value;
+      
+      // Set current version to null (new unsaved document)
+      currentVersionIndex.value = null;
       
       // Create a cursor position at the beginning of the text
       const selection = window.getSelection();
