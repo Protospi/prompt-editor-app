@@ -109,6 +109,51 @@
                 <q-tooltip>Create new prompt document</q-tooltip>
               </q-btn>
               
+              <!-- Language Selector -->
+              <q-select
+                v-model="selectedLanguage"
+                :options="languageOptions"
+                dense
+                outlined
+                emit-value
+                map-options
+                style="min-width: 150px"
+                class="q-mr-sm language-selector"
+                :disable="currentVersionIndex === null"
+                @update:model-value="handleLanguageChange"
+                color="primary"
+                bg-color="white"
+              >
+                <template v-slot:prepend>
+                  <span class="flag-icon">{{ getFlagForLanguage(selectedLanguage) }}</span>
+                </template>
+                <template v-slot:selected>
+                  <div class="row items-center">
+                    <span class="flag-icon">{{ getFlagForLanguage(selectedLanguage) }}</span>
+                    <span class="q-ml-xs">{{ getLanguageName(selectedLanguage) }}</span>
+                  </div>
+                </template>
+                <template v-slot:no-option>
+                  <q-item>
+                    <q-item-section class="text-grey">
+                      No language options
+                    </q-item-section>
+                  </q-item>
+                </template>
+                <template v-slot:option="scope">
+                  <q-item
+                    v-bind="scope.itemProps"
+                  >
+                    <q-item-section>
+                      <div class="row items-center">
+                        <span class="flag-icon">{{ getFlagForLanguage(scope.opt.value) }}</span>
+                        <span class="q-ml-xs">{{ scope.opt.label }}</span>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                </template>
+              </q-select>
+              
               <!-- Version selector dropdown -->
               <q-btn-dropdown 
                 flat 
@@ -139,6 +184,71 @@
                         </q-btn>
                         <q-btn flat round dense icon="delete" size="xs" color="negative" @click.stop="promptForDelete(index)">
                           <q-tooltip>Delete version</q-tooltip>
+                        </q-btn>
+                        <q-btn flat round dense icon="menu" size="xs" >
+                          <q-menu anchor="bottom right" self="top right" class="language-menu" square>
+                            <q-list class="submenu-list">
+                              <q-item-label header class="submenu-header text-primary">
+                                Languages for {{ version.name }}
+                              </q-item-label>
+                              <q-separator spaced />
+                              
+                              <!-- Default language (always available) -->
+                              <q-item 
+                                clickable 
+                                v-close-popup
+                                @click="loadLanguageVariant(index, 'pt-BR')"
+                                :active="currentVersionIndex === index && currentLoadedLanguage === 'pt-BR'"
+                                active-class="bg-primary-1"
+                                dense
+                              >
+                                <q-item-section>
+                                  {{ getLanguageLabel('pt-BR') }} <span class="text-caption text-grey-8">(Default)</span>
+                                </q-item-section>
+                                <q-item-section side>
+                                  <q-icon name="check" size="xs" color="primary" v-if="currentVersionIndex === index && currentLoadedLanguage === 'pt-BR'" />
+                                </q-item-section>
+                              </q-item>
+                              
+                              <!-- Additional languages -->
+                              <template v-if="version.languages">
+                                <q-item 
+                                  v-for="langCode in Object.keys(version.languages).filter(code => code !== 'pt-BR')"
+                                  :key="langCode"
+                                  clickable 
+                                  v-close-popup
+                                  @click="loadLanguageVariant(index, langCode)"
+                                  :active="currentVersionIndex === index && currentLoadedLanguage === langCode"
+                                  active-class="bg-primary-1"
+                                  dense
+                                >
+                                  <q-item-section>{{ getLanguageLabel(langCode) }}</q-item-section>
+                                  <q-item-section side class="row items-center no-wrap">
+                                    <q-icon name="check" size="xs" color="primary" v-if="currentVersionIndex === index && currentLoadedLanguage === langCode" />
+                                    <q-btn 
+                                      flat 
+                                      round 
+                                      dense 
+                                      icon="delete" 
+                                      size="xs" 
+                                      color="negative"
+                                      @click.stop="deleteLanguageVariant(index, langCode)"
+                                    >
+                                      <q-tooltip>Delete language variant</q-tooltip>
+                                    </q-btn>
+                                  </q-item-section>
+                                </q-item>
+                              </template>
+
+                              <!-- Show a message if no additional languages -->
+                              <q-item v-if="!version.languages || Object.keys(version.languages).filter(code => code !== 'pt-BR').length === 0">
+                                <q-item-section class="text-caption text-grey">
+                                  No additional languages
+                                </q-item-section>
+                              </q-item>
+                            </q-list>
+                          </q-menu>
+                          <q-tooltip>Language options</q-tooltip>
                         </q-btn>
                       </q-item-section>
                     </q-item>
@@ -338,6 +448,12 @@ interface PromptVersion {
   timestamp: string;
   content: string;
   html: string;
+  languages?: {
+    [langCode: string]: {
+      content: string;
+      html: string;
+    }
+  };
 }
 
 // Initialize the Turndown service for HTML to Markdown conversion
@@ -363,6 +479,16 @@ const aiModeActive = ref(false);
 const aiPromptInput = ref('');
 const isProcessingAiRequest = ref(false);
 
+// Language support
+const languageOptions = [
+  { label: '🇧🇷 Portuguese (BR)', value: 'pt-BR' },
+  { label: '🇵🇹 Portuguese (PT)', value: 'pt-PT' },
+  { label: '🇺🇸 English', value: 'en-US' },
+  { label: '🇪🇸 Spanish', value: 'es-ES' }
+];
+const selectedLanguage = ref('pt-BR');
+const currentLoadedLanguage = ref('pt-BR');
+
 // Version management
 const promptVersions = ref<(PromptVersion | null)[]>([null, null, null, null, null]);
 const currentVersionIndex = ref<number | null>(null);
@@ -378,8 +504,30 @@ const hasUnsavedChanges = computed(() => {
     return isNotInitialContent || isDifferentFromLastSaved;
   }
   
-  // Otherwise, check if content has changed since last save
-  return markdownOutput.value !== lastSavedContent.value;
+  // Get the current version
+  const version = promptVersions.value[currentVersionIndex.value];
+  if (!version) return false;
+  
+  // If language has changed from the currently loaded one, consider it a change
+  if (selectedLanguage.value !== currentLoadedLanguage.value) {
+    return true;
+  }
+  
+  // If we're editing the default language (main content)
+  if (selectedLanguage.value === 'pt-BR') {
+    return markdownOutput.value !== lastSavedContent.value;
+  }
+  
+  // If we're editing a language variant
+  const langVariant = version.languages?.[selectedLanguage.value];
+  
+  // If the language variant doesn't exist yet, any content is a change
+  if (!langVariant) {
+    return true;
+  }
+  
+  // Otherwise check against the saved content for this language
+  return markdownOutput.value !== langVariant.content;
 });
 
 // Dialogs
@@ -419,15 +567,17 @@ const getSaveButtonTooltip = () => {
     return 'Make changes to enable saving';
   }
   
+  const langLabel = getLanguageLabel(currentLoadedLanguage.value);
+  
   if (currentVersionIndex.value !== null) {
-    return 'Save changes to current version';
+    return `Save changes to current version (${langLabel})`;
   }
   
   if (allSlotsFilled.value) {
     return 'All slots filled. Delete a version first.';
   }
   
-  return 'Save as a new version';
+  return `Save as a new version (${langLabel})`;
 };
 
 // Apply basic formatting
@@ -747,19 +897,47 @@ const updateCurrentVersion = () => {
   const version = promptVersions.value[currentVersionIndex.value];
   if (!version) return;
   
-  // Update the version content
-  version.content = markdownOutput.value;
-  version.html = editorEl.value.innerHTML;
-  // We don't update the name or timestamp to preserve the version identity
-  
-  // Update saved content reference
-  lastSavedContent.value = markdownOutput.value;
-  
-  $q.notify({
-    color: 'positive',
-    message: `Updated ${version.name}`,
-    icon: 'save'
-  });
+  // If we're updating the default language
+  if (selectedLanguage.value === 'pt-BR') {
+    // Update the version content
+    version.content = markdownOutput.value;
+    version.html = editorEl.value.innerHTML;
+    
+    // Update saved content reference
+    lastSavedContent.value = markdownOutput.value;
+    
+    // Make sure both currentLoadedLanguage and selectedLanguage are in sync
+    currentLoadedLanguage.value = 'pt-BR';
+    
+    $q.notify({
+      color: 'positive',
+      message: `Updated ${version.name} (${getLanguageLabel('pt-BR')})`,
+      icon: 'save'
+    });
+  } else {
+    // We're updating a language variant
+    if (!version.languages) {
+      version.languages = {};
+    }
+    
+    // Update or create the language variant
+    version.languages[selectedLanguage.value] = {
+      content: markdownOutput.value,
+      html: editorEl.value.innerHTML
+    };
+    
+    // Update saved content reference
+    lastSavedContent.value = markdownOutput.value;
+    
+    // Make sure the currentLoadedLanguage matches selectedLanguage
+    currentLoadedLanguage.value = selectedLanguage.value;
+    
+    $q.notify({
+      color: 'positive',
+      message: `Updated ${version.name} (${getLanguageLabel(selectedLanguage.value)})`,
+      icon: 'save'
+    });
+  }
 };
 
 // Create a new version in the specified slot
@@ -770,12 +948,15 @@ const createNewVersion = (index: number) => {
     name: getDefaultVersionName(index),
     timestamp: createTimestamp(),
     content: markdownOutput.value,
-    html: editorEl.value.innerHTML
+    html: editorEl.value.innerHTML,
+    languages: {}
   };
   
   promptVersions.value[index] = version;
   currentVersionIndex.value = index;
   lastSavedContent.value = markdownOutput.value;
+  currentLoadedLanguage.value = 'pt-BR';
+  selectedLanguage.value = 'pt-BR';
   
   $q.notify({
     color: 'positive',
@@ -789,16 +970,8 @@ const loadVersion = (index: number) => {
   const version = promptVersions.value[index];
   if (!version || !editorEl.value) return;
   
-  editorEl.value.innerHTML = version.html;
-  updateMarkdown();
-  currentVersionIndex.value = index;
-  lastSavedContent.value = version.content;
-  
-  $q.notify({
-    color: 'info',
-    message: `Loaded ${version.name}`,
-    icon: 'history'
-  });
+  // Load the default language variant
+  loadLanguageVariant(index, 'pt-BR');
 };
 
 const promptForRename = (index: number) => {
@@ -1351,6 +1524,175 @@ const sanitizeHtml = (html: string): string => {
   return tempDiv.innerHTML;
 };
 
+// Helper function to get language label from code
+const getLanguageLabel = (langCode: string): string => {
+  const option = languageOptions.find(opt => opt.value === langCode);
+  return option ? option.label : langCode;
+};
+
+// Helper to extract just the language name without the flag
+const getLanguageName = (langCode: string): string => {
+  const label = getLanguageLabel(langCode);
+  // Remove the flag emoji and return just the language name
+  return label.replace(/🇧🇷|🇵🇹|🇺🇸|🇪🇸/, '').trim();
+};
+
+// Helper to get just the flag emoji for a language
+const getFlagForLanguage = (langCode: string): string => {
+  switch (langCode) {
+    case 'pt-BR': return '🇧🇷';
+    case 'pt-PT': return '🇵🇹';
+    case 'en-US': return '🇺🇸';
+    case 'es-ES': return '🇪🇸';
+    default: return '🌐';
+  }
+};
+
+// Load a specific language variant for a version
+const loadLanguageVariant = (index: number, langCode: string) => {
+  const version = promptVersions.value[index];
+  if (!version || !editorEl.value) return;
+  
+  // Check if the language variant exists
+  if (langCode === 'pt-BR' || !version.languages || !version.languages[langCode]) {
+    // Load the default content 
+    editorEl.value.innerHTML = version.html;
+    updateMarkdown();
+    currentVersionIndex.value = index;
+    lastSavedContent.value = version.content;
+    selectedLanguage.value = 'pt-BR';
+    currentLoadedLanguage.value = 'pt-BR';
+  } else {
+    // Load the language variant
+    const langVariant = version.languages[langCode];
+    editorEl.value.innerHTML = langVariant.html;
+    updateMarkdown();
+    currentVersionIndex.value = index;
+    lastSavedContent.value = langVariant.content;
+    selectedLanguage.value = langCode;
+    currentLoadedLanguage.value = langCode;
+  }
+  
+  $q.notify({
+    color: 'info',
+    message: `Loaded ${version.name} (${getLanguageLabel(langCode)})`,
+    icon: 'history'
+  });
+};
+
+// Delete a language variant
+const deleteLanguageVariant = (index: number, langCode: string) => {
+  // Don't allow deleting the default language (pt-BR)
+  if (langCode === 'pt-BR') {
+    $q.notify({
+      color: 'negative',
+      message: 'Cannot delete the default language',
+      icon: 'error'
+    });
+    return;
+  }
+  
+  const version = promptVersions.value[index];
+  if (!version || !version.languages) return;
+  
+  // Ask for confirmation
+  $q.dialog({
+    title: 'Confirm Deletion',
+    message: `Are you sure you want to delete the ${getLanguageLabel(langCode)} variant?`,
+    cancel: true,
+    persistent: true
+  }).onOk(() => {
+    // Delete the language variant
+    if (version.languages) {
+      delete version.languages[langCode];
+      
+      // If this was the currently loaded language, reset to default
+      if (currentVersionIndex.value === index && currentLoadedLanguage.value === langCode) {
+        loadLanguageVariant(index, 'pt-BR');
+      }
+      
+      $q.notify({
+        color: 'negative',
+        message: `Deleted ${getLanguageLabel(langCode)} variant`,
+        icon: 'delete'
+      });
+    }
+  });
+};
+
+// Handle language change
+const handleLanguageChange = () => {
+  // If no version is selected, do nothing
+  if (currentVersionIndex.value === null) return;
+  
+  const versionIndex = currentVersionIndex.value;
+  const version = promptVersions.value[versionIndex];
+  if (!version) return;
+  
+  // Check if we're switching to a language that's already loaded but has unsaved changes
+  if (hasUnsavedChanges.value && selectedLanguage.value !== currentLoadedLanguage.value) {
+    // We're changing the language with unsaved changes in the current language
+    // Just update the selectedLanguage and mark as unsaved - don't load from storage
+    // This allows creating new language variants without losing content
+    
+    // If the target language already exists, ask if user wants to load it or overwrite
+    if (selectedLanguage.value !== 'pt-BR' && version.languages && version.languages[selectedLanguage.value]) {
+      $q.dialog({
+        title: 'Language Variant Exists',
+        message: `A ${getLanguageLabel(selectedLanguage.value)} variant already exists. Do you want to load it (replacing current content) or keep your current edits to save in this language?`,
+        options: {
+          type: 'radio',
+          model: 'load',
+          items: [
+            { label: 'Load existing content', value: 'load' },
+            { label: 'Keep current changes', value: 'keep' }
+          ]
+        },
+        persistent: true
+      }).onOk(action => {
+        if (action === 'load') {
+          // User wants to load the existing language variant
+          loadLanguageVariant(versionIndex, selectedLanguage.value);
+        } else {
+          // User wants to keep current changes to save in the new language
+          // Just update the currentLoadedLanguage to match the selectedLanguage
+          currentLoadedLanguage.value = selectedLanguage.value;
+          
+          $q.notify({
+            color: 'info',
+            message: `Switched to ${getLanguageLabel(selectedLanguage.value)}. Save to create/update this language variant.`,
+            icon: 'language'
+          });
+        }
+      }).onCancel(() => {
+        // Revert the selection
+        selectedLanguage.value = currentLoadedLanguage.value;
+      });
+      return;
+    }
+    
+    // If we're here, the target language doesn't exist yet or is default
+    // Just update the currentLoadedLanguage
+    currentLoadedLanguage.value = selectedLanguage.value;
+    
+    $q.notify({
+      color: 'info',
+      message: `Switched to ${getLanguageLabel(selectedLanguage.value)}. Save to create/update this language variant.`,
+      icon: 'language'
+    });
+    return;
+  }
+  
+  // If we have unsaved changes in the SAME language or no unsaved changes at all
+  if (hasUnsavedChanges.value && selectedLanguage.value === currentLoadedLanguage.value) {
+    // We're not changing languages, just switching versions with unsaved changes
+    return;
+  }
+  
+  // If we're here, we have no unsaved changes, so we can safely load the selected language variant
+  loadLanguageVariant(versionIndex, selectedLanguage.value);
+};
+
 // Initialize the editor
 onMounted(() => {
   if (editorEl.value) {
@@ -1412,6 +1754,51 @@ onBeforeUnmount(() => {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   border-bottom: 1px solid #e0e0e0;
+}
+
+/* Language selector styles */
+.language-selector :deep(.q-field__control) {
+  height: 32px;
+  min-height: unset;
+}
+
+.language-selector :deep(.q-field__marginal) {
+  height: 32px;
+}
+
+.flag-icon {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  margin-right: 4px;
+}
+
+.language-menu {
+  max-height: 400px;
+  overflow-y: auto;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  min-width: 200px;
+}
+
+.submenu-list {
+  padding: 8px 0;
+}
+
+.submenu-header {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 16px;
+  margin: 0;
+}
+
+.language-menu :deep(.q-item) {
+  min-height: 32px;
+  padding: 4px 16px;
+}
+
+.language-menu :deep(.q-separator--spaced) {
+  margin: 8px 0;
 }
 
 /* Editor content area */
