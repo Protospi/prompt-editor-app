@@ -714,7 +714,7 @@ const toggleAiMode = () => {
 };
 
 // Submit AI prompt request
-const submitAiPrompt = () => {
+const submitAiPrompt = async () => {
   if (!aiPromptInput.value.trim()) {
     $q.notify({
       color: 'negative',
@@ -726,30 +726,68 @@ const submitAiPrompt = () => {
   
   isProcessingAiRequest.value = true;
   
-  // This is a temporary mock function that will be replaced with an actual API call
-  setTimeout(() => {
-    // Mock response with a formatted prompt template
-    const mockResponse = {
-      prompt: "######Persona \n Template for persona \n ######Instructions: "
+  try {
+    // Prepare the payload
+    const payload = {
+      payload: {
+        prompt: `This is my current prompt:\n${markdownOutput.value}\n\nThis is my instructions:\n${aiPromptInput.value}`
+      }
     };
+    
+    // Get API config from env vars
+    const apiUrl = import.meta.env.VITE_API_URL;
+    const apiToken = import.meta.env.VITE_API_TOKEN;
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
     
     // First exit AI mode
     aiModeActive.value = false;
     
-    // Then apply the response to the editor (with a small delay to ensure DOM is ready)
-    applyAiGeneratedPrompt(mockResponse.prompt);
-    
-    // Reset the AI processing state
-    isProcessingAiRequest.value = false;
+    // Then apply the response to the editor
+    if (data && data.prompt) {
+      applyAiGeneratedPrompt(data.prompt);
+      
+      $q.notify({
+        color: 'positive',
+        message: 'AI suggestion applied to editor. Review and save as a version if you like it.',
+        icon: 'auto_awesome',
+        timeout: 3000,
+        position: 'top'
+      });
+    } else {
+      throw new Error('Invalid API response format');
+    }
+  } catch (error) {
+    console.error('Error calling AI API:', error);
     
     $q.notify({
-      color: 'positive',
-      message: 'AI suggestion applied to editor. Review and save as a version if you like it.',
-      icon: 'auto_awesome',
-      timeout: 3000,
+      color: 'negative',
+      message: `Error generating AI suggestion: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      icon: 'error',
+      timeout: 5000,
       position: 'top'
     });
-  }, 1500); // Simulate a network delay
+    
+    // Stay in AI mode on error
+    aiModeActive.value = true;
+  } finally {
+    // Reset the AI processing state
+    isProcessingAiRequest.value = false;
+  }
 };
 
 // Apply the AI generated prompt to the editor
