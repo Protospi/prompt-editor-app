@@ -178,6 +178,7 @@
             @focus="ensureProperFormatting"
             @paste="handlePaste"
             @blur="ensureProperFormatting"
+            @copy="handleCopy"
           ></div>
           
           <!-- AI editor mode when AI mode is on -->
@@ -322,7 +323,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, onBeforeUnmount } from 'vue';
 import turndown from 'turndown';
 import { useQuasar } from 'quasar';
 
@@ -351,6 +352,9 @@ const markdownOutput = ref('');
 
 // Store text selection for color change
 const savedSelection = ref<Range | null>(null);
+
+// Store the last copied markdown segment
+const lastCopiedMarkdown = ref('');
 
 // AI Mode state
 const aiModeActive = ref(false);
@@ -1088,20 +1092,187 @@ const ensureProperFormatting = () => {
   }
 };
 
-// Handle paste operations to prevent formatting issues
-const handlePaste = (event: ClipboardEvent) => {
-  // Prevent the default paste which would include formatting
+// Add custom copy handler to the editor
+const handleCopy = (event: ClipboardEvent) => {
+  // Prevent the default copy behavior
   event.preventDefault();
   
-  // Get plain text from clipboard
-  const text = event.clipboardData?.getData('text/plain') || '';
+  // Get the current selection
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
   
-  // Insert the plain text at cursor position
-  document.execCommand('insertText', false, text);
+  // Get the selected content
+  const range = selection.getRangeAt(0);
+  if (!range) return;
   
-  // Update markdown and check formatting to ensure we haven't inherited unwanted formats
+  // Create a temporary div to hold the selected HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.appendChild(range.cloneContents());
+  
+  // Process colored text before converting to markdown
+  // Find all spans with color style and add our custom color tags
+  const coloredSpans = tempDiv.querySelectorAll('span[style*="color"]');
+  coloredSpans.forEach(span => {
+    // Extract color value
+    const style = span.getAttribute('style') || '';
+    const colorMatch = style.match(/color:\s*([^;]+)/i);
+    if (colorMatch && colorMatch[1]) {
+      const colorValue = colorMatch[1].trim();
+      
+      // Create wrapper with our custom color syntax
+      const wrapper = document.createElement('span');
+      wrapper.setAttribute('data-color', colorValue);
+      
+      // Move the span's children to the wrapper
+      while (span.firstChild) {
+        wrapper.appendChild(span.firstChild);
+      }
+      
+      // Replace the original span with our wrapper
+      span.parentNode?.replaceChild(wrapper, span);
+    }
+  });
+  
+  // Convert the HTML to markdown using turndown
+  let selectedMarkdown = turndownService.turndown(tempDiv.innerHTML);
+  
+  // Process our custom color tags
+  selectedMarkdown = selectedMarkdown.replace(
+    /\[([^\]]+)\]\{data-color="([^"]+)"\}/g, 
+    '{color:$2}$1{/color}'
+  );
+  
+  // Save the markdown for internal use
+  lastCopiedMarkdown.value = selectedMarkdown;
+  
+  // Add both plain text and HTML versions to clipboard
+  if (event.clipboardData) {
+    event.clipboardData.setData('text/plain', selectedMarkdown);
+    event.clipboardData.setData('text/html', tempDiv.innerHTML);
+  }
+  
+  console.log('Copied markdown with colors:', selectedMarkdown);
+};
+
+// Handle paste operations to support markdown content
+const handlePaste = (event: ClipboardEvent) => {
+  // Prevent the default paste behavior
+  event.preventDefault();
+  
+  // First check if we have content in clipboard
+  if (!event.clipboardData) return;
+  
+  // Try to get HTML content first for better formatting preservation
+  const pastedHtml = event.clipboardData.getData('text/html');
+  if (pastedHtml) {
+    // Clean and insert HTML directly
+    document.execCommand('insertHTML', false, sanitizeHtml(pastedHtml));
+    updateMarkdown();
+    return;
+  }
+  
+  // Get the markdown or plain text content
+  const pastedText = event.clipboardData.getData('text/plain');
+  if (!pastedText) return;
+  
+  // Check if this looks like markdown (contains markdown syntax)
+  const hasMarkdownSyntax = /#{1,6}\s|[*_]|^\s*[-+*]\s|-{3,}|`{1,3}|>\s/.test(pastedText);
+  
+  if (hasMarkdownSyntax) {
+    // Try to convert markdown to HTML
+    try {
+      // Create a temporary element to convert markdown to HTML
+      let html = pastedText
+        // Convert headings (h6 for our app)
+        .replace(/^#{1,6}\s+(.+)$/gm, '<h6>$1</h6>')
+        // Convert bold
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__(.+?)__/g, '<strong>$1</strong>') // underscore bold
+        // Convert italic
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/_(.+?)_/g, '<em>$1</em>') // underscore italic
+        // Convert bullet lists - handle multiple bullet types
+        .replace(/^\s*[-+*]\s+(.+)$/gm, '<li>$1</li>');
+      
+      // Process lists - wrap consecutive li elements in ul
+      let processedHtml = '';
+      let inList = false;
+      html.split('\n').forEach(line => {
+        if (line.includes('<li>')) {
+          if (!inList) {
+            processedHtml += '<ul>';
+            inList = true;
+          }
+          processedHtml += line;
+        } else {
+          if (inList) {
+            processedHtml += '</ul>';
+            inList = false;
+          }
+          // Only wrap non-formatted lines in paragraphs
+          if (line.trim() && !line.includes('<h6>')) {
+            processedHtml += `<p>${line}</p>`;
+          } else {
+            processedHtml += line;
+          }
+        }
+      });
+      
+      // Close any open lists
+      if (inList) {
+        processedHtml += '</ul>';
+      }
+      
+      // Check for color syntax - simplified custom format: {color:red}text{/color}
+      processedHtml = processedHtml.replace(/{color:([\w#]+)}(.+?){\/color}/g, 
+        '<span style="color:$1">$2</span>');
+      
+      // Insert the HTML at the cursor position
+      document.execCommand('insertHTML', false, processedHtml);
+      
+      // Update markdown output
+      updateMarkdown();
+      return;
+    } catch (error) {
+      console.error('Error processing markdown:', error);
+      // Fall through to plain text handling
+    }
+  }
+  
+  // For plain text or if markdown processing failed
+  document.execCommand('insertText', false, pastedText);
+  
+  // Update markdown and check formatting
   updateMarkdown();
   ensureProperFormatting();
+};
+
+// Helper to sanitize HTML input (basic implementation)
+const sanitizeHtml = (html: string): string => {
+  // Create a temporary div
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  // Remove any script tags or event handlers
+  const scripts = tempDiv.querySelectorAll('script');
+  scripts.forEach(script => script.remove());
+  
+  // Remove potentially dangerous attributes
+  const allElements = tempDiv.querySelectorAll('*');
+  allElements.forEach(el => {
+    // Remove event handlers
+    for (let i = el.attributes.length - 1; i >= 0; i--) {
+      const attrName = el.attributes[i]?.name;
+      if (attrName && (
+        attrName.startsWith('on') || 
+        (attrName === 'href' && el.attributes[i]?.value?.startsWith('javascript:'))
+      )) {
+        el.removeAttribute(attrName);
+      }
+    }
+  });
+  
+  return tempDiv.innerHTML;
 };
 
 // Initialize the editor
@@ -1109,6 +1280,9 @@ onMounted(() => {
   if (editorEl.value) {
     // Initialize with a sample prompt
     editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+    
+    // Add event listener for copy
+    editorEl.value.addEventListener('copy', handleCopy);
     
     // Ensure proper formatting is applied
     setTimeout(() => {
@@ -1137,6 +1311,14 @@ onMounted(() => {
         selection.addRange(range);
       }
     }, 100);
+  }
+});
+
+// Cleanup event listeners
+onBeforeUnmount(() => {
+  if (editorEl.value) {
+    // Remove copy event listener
+    editorEl.value.removeEventListener('copy', handleCopy);
   }
 });
 </script>
