@@ -962,15 +962,68 @@ const applyAiGeneratedPrompt = (markdownText: string) => {
   // Convert markdown to HTML
   // For a simple implementation, we'll handle the basic markdown formatting patterns
   // This would ideally use a more robust markdown-to-html converter
-  const htmlContent = markdownText
-    // Convert headers
-    .replace(/#{6} ?(.+)/g, '<h6>$1</h6>')
-    // Convert bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Convert italics
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Convert new lines to paragraphs
-    .split('\n').map(line => line.trim() ? `<p>${line}</p>` : '').join('');
+  
+  // Process the markdown to handle special bullet points with asterisks and numbers
+  // First, normalize line endings
+  const normalizedText = markdownText.replace(/\r\n/g, '\n');
+  
+  // Create an array to build the HTML content line by line
+  const lines = normalizedText.split('\n');
+  let htmlLines: string[] = [];
+  let inList = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i] || '';
+    
+    // Process headers
+    if (/^#{1,6}\s+(.+)$/.test(line)) {
+      if (inList) {
+        htmlLines.push('</ul>');
+        inList = false;
+      }
+      htmlLines.push(line.replace(/^#{1,6}\s+(.+)$/, '<h6>$1</h6>'));
+      continue;
+    }
+    
+    // Process complex bullet points with numbers and asterisks
+    // Match patterns like: \* 1. Text or * 1. Text or 1. Text or just * Text
+    if (/^\s*(\\?\*\s*\d+\.|\\?\*|[\-+]|\d+\.)\s+(.+)$/.test(line)) {
+      if (!inList) {
+        htmlLines.push('<ul>');
+        inList = true;
+      }
+      
+      // Extract the content part from the bullet
+      const content = line.replace(/^\s*(\\?\*\s*\d+\.|\\?\*|[\-+]|\d+\.)\s+(.+)$/, '$2');
+      htmlLines.push(`<li>${content}</li>`);
+      continue;
+    }
+    
+    // Close list if the next line isn't a bullet point
+    if (inList && !/^\s*(\\?\*\s*\d+\.|\\?\*|[\-+]|\d+\.)\s+/.test(line)) {
+      htmlLines.push('</ul>');
+      inList = false;
+    }
+    
+    // Process bold text
+    line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Process italic text
+    line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    
+    // If not a special line, treat as regular paragraph
+    if (line.trim()) {
+      htmlLines.push(`<p>${line}</p>`);
+    }
+  }
+  
+  // Close any open list at the end
+  if (inList) {
+    htmlLines.push('</ul>');
+  }
+  
+  // Join the processed lines to form the HTML content
+  const htmlContent = htmlLines.join('');
   
   // Store the HTML content to be applied after AI mode is exited
   // We need to use a short timeout to ensure the DOM has updated after exiting AI mode
@@ -1178,56 +1231,77 @@ const handlePaste = (event: ClipboardEvent) => {
   if (!pastedText) return;
   
   // Check if this looks like markdown (contains markdown syntax)
-  const hasMarkdownSyntax = /#{1,6}\s|[*_]|^\s*[-+*]\s|-{3,}|`{1,3}|>\s/.test(pastedText);
+  const hasMarkdownSyntax = /#{1,6}\s|[*_]|^\s*[-+*]|\\?\*|^\s*\d+\.|`{1,3}|>\s/.test(pastedText);
   
   if (hasMarkdownSyntax) {
     // Try to convert markdown to HTML
     try {
-      // Create a temporary element to convert markdown to HTML
-      let html = pastedText
-        // Convert headings (h6 for our app)
-        .replace(/^#{1,6}\s+(.+)$/gm, '<h6>$1</h6>')
-        // Convert bold
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/__(.+?)__/g, '<strong>$1</strong>') // underscore bold
-        // Convert italic
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/_(.+?)_/g, '<em>$1</em>') // underscore italic
-        // Convert bullet lists - handle multiple bullet types
-        .replace(/^\s*[-+*]\s+(.+)$/gm, '<li>$1</li>');
+      // Normalize line endings
+      const normalizedText = pastedText.replace(/\r\n/g, '\n');
       
-      // Process lists - wrap consecutive li elements in ul
-      let processedHtml = '';
+      // Process line by line for more complex bullet point handling
+      const lines = normalizedText.split('\n');
+      let htmlLines: string[] = [];
       let inList = false;
-      html.split('\n').forEach(line => {
-        if (line.includes('<li>')) {
-          if (!inList) {
-            processedHtml += '<ul>';
-            inList = true;
-          }
-          processedHtml += line;
-        } else {
+      
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i] || '';
+        
+        // Process headings (h6 for our app)
+        if (/^#{1,6}\s+(.+)$/.test(line)) {
           if (inList) {
-            processedHtml += '</ul>';
+            htmlLines.push('</ul>');
             inList = false;
           }
-          // Only wrap non-formatted lines in paragraphs
-          if (line.trim() && !line.includes('<h6>')) {
-            processedHtml += `<p>${line}</p>`;
-          } else {
-            processedHtml += line;
-          }
+          htmlLines.push(line.replace(/^#{1,6}\s+(.+)$/, '<h6>$1</h6>'));
+          continue;
         }
-      });
-      
-      // Close any open lists
-      if (inList) {
-        processedHtml += '</ul>';
+        
+        // Process complex bullet points with numbers and asterisks
+        // Match patterns like: \* 1. Text or * 1. Text or 1. Text or just * Text
+        if (/^\s*(\\?\*\s*\d+\.|\\?\*|[\-+]|\d+\.)\s+(.+)$/.test(line)) {
+          if (!inList) {
+            htmlLines.push('<ul>');
+            inList = true;
+          }
+          
+          // Extract the content part from the bullet
+          const content = line.replace(/^\s*(\\?\*\s*\d+\.|\\?\*|[\-+]|\d+\.)\s+(.+)$/, '$2');
+          htmlLines.push(`<li>${content}</li>`);
+          continue;
+        }
+        
+        // Close list if the next line isn't a bullet point
+        if (inList && !/^\s*(\\?\*\s*\d+\.|\\?\*|[\-+]|\d+\.)\s+/.test(line)) {
+          htmlLines.push('</ul>');
+          inList = false;
+        }
+        
+        // Process bold text
+        line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/__(.+?)__/g, '<strong>$1</strong>');
+        
+        // Process italic text
+        line = line.replace(/\*(.+?)\*/g, '<em>$1</em>').replace(/_(.+?)_/g, '<em>$1</em>');
+        
+        // Check for color syntax
+        line = line.replace(/{color:([\w#]+)}(.+?){\/color}/g, '<span style="color:$1">$2</span>');
+        
+        // If not a special line and not empty, treat as paragraph
+        if (line.trim() && !line.includes('<h6>') && !line.includes('<li>')) {
+          htmlLines.push(`<p>${line}</p>`);
+        } else if (!line.trim()) {
+          // Add empty line if needed
+          htmlLines.push('<p><br></p>');
+        }
       }
       
-      // Check for color syntax - simplified custom format: {color:red}text{/color}
-      processedHtml = processedHtml.replace(/{color:([\w#]+)}(.+?){\/color}/g, 
-        '<span style="color:$1">$2</span>');
+      // Close any open list at the end
+      if (inList) {
+        htmlLines.push('</ul>');
+      }
+      
+      // Join all lines into final HTML
+      const processedHtml = htmlLines.join('');
       
       // Insert the HTML at the cursor position
       document.execCommand('insertHTML', false, processedHtml);
@@ -1415,10 +1489,25 @@ onBeforeUnmount(() => {
 .editor ul {
   margin-left: 16px;
   padding-left: 16px;
+  margin-top: 6px;
+  margin-bottom: 6px;
 }
 
 .editor li {
   margin-bottom: 4px;
+  list-style-position: outside;
+  display: list-item;
+}
+
+/* Improve nested list styling */
+.editor ul ul {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* Make sure bullet points are properly displayed */
+.editor ul li {
+  list-style-type: disc;
 }
 
 /* Color swatch for dropdown */
