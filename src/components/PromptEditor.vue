@@ -181,7 +181,7 @@
           ></div>
           
           <!-- AI editor mode when AI mode is on -->
-          <div v-else class="ai-editor-container">
+          <div v-if="aiModeActive" class="ai-editor-container">
             <div class="text-subtitle1 q-mb-md">
               <q-icon name="smart_toy" class="q-mr-xs" /> AI Prompt Assistant
             </div>
@@ -426,6 +426,23 @@ const getSaveButtonTooltip = () => {
 
 // Apply basic formatting
 const applyFormat = (command: string) => {
+  // Handle special cases for lists when applying to multiple paragraphs
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+    // For list commands, we need special handling for multi-paragraph selections
+    if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
+      document.execCommand(command, false);
+      updateMarkdown();
+      return;
+    }
+    
+    // For block formatting commands, we can just execute directly
+    document.execCommand(command, false);
+    updateMarkdown();
+    return;
+  }
+  
+  // Default case for cursor position or single element selection
   document.execCommand(command, false);
   updateMarkdown();
 };
@@ -451,7 +468,7 @@ const applyColor = (colorValue: string) => {
       updateMarkdown();
     }
   } else {
-    // Fallback if no selection was saved
+    // Apply color to current selection
     document.execCommand('foreColor', false, colorValue);
     updateMarkdown();
   }
@@ -463,6 +480,17 @@ const formatAsTitle = () => {
   const selection = window.getSelection();
   if (!selection) return;
   
+  // Check if we have a non-collapsed selection (multiple elements or text spans)
+  if (selection.rangeCount > 0 && !selection.isCollapsed) {
+    // Apply heading directly to the selection
+    document.execCommand('formatBlock', false, 'h6');
+    
+    // Update markdown to reflect changes
+    updateMarkdown();
+    return;
+  }
+  
+  // Original code for cursor position or collapsed selection
   // Special case for first line or empty selection - select the whole paragraph
   if (selection.isCollapsed || !selection.rangeCount) {
     // Find the containing block element
@@ -991,6 +1019,22 @@ const performReset = () => {
   });
 };
 
+// Handle mouse selection to ensure formatting is appropriate
+const handleMouseSelection = () => {
+  const selection = window.getSelection();
+  if (!selection) return;
+  
+  // If selection is empty or just a cursor position, ensure proper paragraph formatting
+  if (!selection.rangeCount || selection.isCollapsed) {
+    ensureProperFormatting();
+    updateMarkdown();
+    return;
+  }
+  
+  // Selection exists - just update markdown without modifying the selection
+  updateMarkdown();
+};
+
 // Ensure that the current cursor position/selection has proper formatting
 const ensureProperFormatting = () => {
   // If no selection exists yet, exit
@@ -1036,20 +1080,12 @@ const ensureProperFormatting = () => {
     currentNode = currentNode.parentNode;
   }
   
-  // Standard case: If we're not in a heading, enforce paragraph formatting
-  if (currentNode && currentNode.nodeName !== 'H6') {
-    // Force paragraph format for non-heading nodes
+  // Only apply default paragraph formatting if the cursor is positioned and not in a heading
+  // and we're not working with a selection
+  if (selection.isCollapsed && currentNode && currentNode.nodeName !== 'H6') {
+    // Force paragraph format for non-heading nodes only when cursor is positioned (not selecting text)
     document.execCommand('formatBlock', false, 'p');
   }
-};
-
-// Handle mouse selection to ensure formatting is appropriate
-const handleMouseSelection = () => {
-  // Force a formatting check when mouse selection changes
-  ensureProperFormatting();
-  
-  // Also update markdown to ensure consistency
-  updateMarkdown();
 };
 
 // Handle paste operations to prevent formatting issues
