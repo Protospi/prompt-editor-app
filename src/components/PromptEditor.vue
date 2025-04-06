@@ -172,6 +172,11 @@
             @input="updateMarkdown"
             @keydown="handleKeyDown"
             @keyup="updateMarkdown"
+            @mouseup="handleMouseSelection"
+            @click="handleMouseSelection"
+            @focus="ensureProperFormatting"
+            @paste="handlePaste"
+            @blur="ensureProperFormatting"
           ></div>
           
           <!-- AI editor mode when AI mode is on -->
@@ -451,7 +456,30 @@ const applyColor = (colorValue: string) => {
 const formatAsTitle = () => {
   // Get the current selection
   const selection = window.getSelection();
-  if (!selection || !selection.anchorNode) return;
+  if (!selection) return;
+  
+  // Special case for first line or empty selection - select the whole paragraph
+  if (selection.isCollapsed || !selection.rangeCount) {
+    // Find the containing block element
+    let container = selection.anchorNode;
+    if (!container) return;
+    
+    // If in text node, get parent
+    if (container.nodeType === Node.TEXT_NODE) {
+      container = container.parentNode;
+    }
+    
+    // If this is a valid block container, select its content
+    if (container && (container.nodeName === 'P' || container.nodeName === 'H6')) {
+      const range = document.createRange();
+      range.selectNodeContents(container);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+  
+  // Check if selection is now valid
+  if (!selection.anchorNode) return;
   
   // Find the current line/paragraph element
   let currentNode: Node | null = selection.anchorNode;
@@ -465,65 +493,62 @@ const formatAsTitle = () => {
   if (currentNode && currentNode.nodeName === 'H6') {
     document.execCommand('formatBlock', false, 'p');
   } else {
-    // Find the paragraph or parent element that contains this node
-    while (currentNode && currentNode.nodeName !== 'P' && currentNode.nodeName !== 'DIV') {
-      currentNode = currentNode.parentNode;
+    // We'll use a more direct and reliable approach:
+    
+    // 1. First identify the paragraph containing the selection
+    let paragraphNode = currentNode;
+    while (paragraphNode && paragraphNode.nodeName !== 'P' && paragraphNode.nodeName !== 'DIV') {
+      paragraphNode = paragraphNode.parentNode;
     }
     
-    // Apply heading format only to this line
-    if (currentNode) {
-      // Save selection
-      const range = selection.getRangeAt(0);
-      
-      // Select entire paragraph
-      const newRange = document.createRange();
-      newRange.selectNodeContents(currentNode);
-      selection.removeAllRanges();
-      selection.addRange(newRange);
-      
-      // Apply heading format
-      document.execCommand('formatBlock', false, 'h6');
-      
-      // Find the newly created h6 element to apply inline styles
-      const heading = selection.anchorNode;
-      if (heading && heading.nodeName === 'H6') {
-        // Apply custom styles directly to the element for very tight spacing
-        const headingEl = heading as HTMLElement;
-        
-        // Apply very aggressive spacing reduction
-        headingEl.style.marginTop = '0';
-        headingEl.style.marginBottom = '0';
-        headingEl.style.paddingTop = '0';
-        headingEl.style.paddingBottom = '0';
-        headingEl.style.lineHeight = '1.1';
-        
-        // Also adjust spacing of previous and next sibling paragraphs if they exist
-        if (headingEl.previousElementSibling && headingEl.previousElementSibling.tagName === 'P') {
-          const prevP = headingEl.previousElementSibling as HTMLElement;
-          prevP.style.marginBottom = '0';
-          prevP.style.paddingBottom = '0';
-        }
-        
-        if (headingEl.nextElementSibling && headingEl.nextElementSibling.tagName === 'P') {
-          const nextP = headingEl.nextElementSibling as HTMLElement;
-          nextP.style.marginTop = '0';
-          nextP.style.paddingTop = '0';
-        }
-      }
-      
-      // Restore original selection
+    // 2. If we found a valid container, apply the heading
+    if (paragraphNode) {
+      // Select the entire paragraph to ensure consistent formatting
+      const range = document.createRange();
+      range.selectNodeContents(paragraphNode);
       selection.removeAllRanges();
       selection.addRange(range);
+      
+      // Apply heading format (H6)
+      document.execCommand('formatBlock', false, 'h6');
+      
+      // Get the newly created h6 element
+      // This requires finding it again after the format change
+      const newHeading = selection.anchorNode;
+      if (newHeading) {
+        // If this is an H6 element, apply the custom styles
+        if (newHeading.nodeName === 'H6') {
+          const headingEl = newHeading as HTMLElement;
+          
+          // Apply very aggressive spacing reduction
+          headingEl.style.marginTop = '0';
+          headingEl.style.marginBottom = '0';
+          headingEl.style.paddingTop = '0';
+          headingEl.style.paddingBottom = '0';
+          headingEl.style.lineHeight = '1.1';
+          
+          // Also adjust spacing of previous and next sibling paragraphs if they exist
+          if (headingEl.previousElementSibling && headingEl.previousElementSibling.tagName === 'P') {
+            const prevP = headingEl.previousElementSibling as HTMLElement;
+            prevP.style.marginBottom = '0';
+            prevP.style.paddingBottom = '0';
+          }
+          
+          if (headingEl.nextElementSibling && headingEl.nextElementSibling.tagName === 'P') {
+            const nextP = headingEl.nextElementSibling as HTMLElement;
+            nextP.style.marginTop = '0';
+            nextP.style.paddingTop = '0';
+          }
+        }
+      }
     }
   }
   
-  // Add a small delay before updating markdown to ensure DOM changes are processed
-  setTimeout(() => {
-    updateMarkdown();
-  }, 0);
+  // Update markdown immediately to reflect changes
+  updateMarkdown();
 };
 
-// Handle keydown events for tabs in lists
+// Handle keydown events for tabs in lists and enter in headings
 const handleKeyDown = (event: KeyboardEvent) => {
   // Tab in lists for indentation
   if (event.key === 'Tab' && isInList()) {
@@ -536,6 +561,60 @@ const handleKeyDown = (event: KeyboardEvent) => {
     }
     
     updateMarkdown();
+  }
+  
+  // Handle Enter key to prevent heading style from being applied to the next line
+  if (event.key === 'Enter') {
+    // Always prevent the default Enter behavior to have full control
+    event.preventDefault();
+    
+    const selection = window.getSelection();
+    if (!selection || !selection.anchorNode) return;
+    
+    // Find the current node and its parent element
+    let currentNode: Node | null = selection.anchorNode;
+    
+    // If we're in a text node, get its parent
+    if (currentNode.nodeType === Node.TEXT_NODE) {
+      currentNode = currentNode.parentNode;
+    }
+    
+    // Check if we're in a heading element or any of its parents
+    let isInHeading = false;
+    let headingNode: Node | null = null;
+    let tempNode = currentNode;
+    
+    while (tempNode) {
+      if (tempNode.nodeName === 'H6') {
+        isInHeading = true;
+        headingNode = tempNode;
+        break;
+      }
+      tempNode = tempNode.parentNode;
+    }
+    
+    // Explicitly create a new paragraph after either a heading or regular paragraph
+    if (editorEl.value) {
+      // First, insert a line break to create a new paragraph
+      document.execCommand('insertParagraph', false);
+      
+      // Immediately force paragraph format on the newly created paragraph
+      document.execCommand('formatBlock', false, 'p');
+      
+      // Get the current node again after inserting the paragraph
+      currentNode = selection.anchorNode;
+      if (currentNode && currentNode.nodeType === Node.TEXT_NODE) {
+        currentNode = currentNode.parentNode;
+      }
+      
+      // If we found a node and it's not already a paragraph, force paragraph format again
+      if (currentNode && currentNode.nodeName !== 'P') {
+        document.execCommand('formatBlock', false, 'p');
+      }
+      
+      // Update the markdown output
+      updateMarkdown();
+    }
   }
 };
 
@@ -557,6 +636,20 @@ const isInList = (): boolean => {
 // Update markdown output
 const updateMarkdown = () => {
   if (editorEl.value) {
+    // Special handling for editor state
+    const firstChild = editorEl.value.firstChild;
+    
+    // If the editor has content but isn't properly wrapped in blocks, fix it
+    if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
+      // Wrap loose text in paragraphs for proper formatting
+      const text = editorEl.value.textContent || '';
+      editorEl.value.innerHTML = `<p>${text}</p>`;
+    }
+    
+    // Continue with normal formatting checks
+    ensureProperFormatting();
+    
+    // Update the markdown output
     const html = editorEl.value.innerHTML;
     markdownOutput.value = turndownService.turndown(html);
   }
@@ -858,15 +951,113 @@ const performReset = () => {
   });
 };
 
+// Ensure that the current cursor position/selection has proper formatting
+const ensureProperFormatting = () => {
+  // If no selection exists yet, exit
+  const selection = window.getSelection();
+  if (!selection) return;
+  
+  // Special handling for empty editor or initial paragraph
+  if (editorEl.value) {
+    // Check if we're on the initial element or an empty editor
+    const firstChild = editorEl.value.firstChild;
+    
+    // If editor is empty or only has a single paragraph, ensure it's properly formatted
+    if (!firstChild) {
+      // Create an initial paragraph if editor is completely empty
+      const p = document.createElement('p');
+      p.innerHTML = '<br>'; // Empty paragraph needs a br to be visible
+      editorEl.value.appendChild(p);
+      
+      // Put cursor in it
+      const range = document.createRange();
+      range.setStart(p, 0);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    
+    // Ensure there's always a first paragraph (not heading)
+    if (firstChild && firstChild.nodeName !== 'P' && firstChild.nodeName !== 'H6') {
+      // Wrap content in paragraph if needed
+      document.execCommand('formatBlock', false, 'p');
+    }
+  }
+  
+  // If there's no anchor node, exit
+  if (!selection.anchorNode) return;
+  
+  // Get current node
+  let currentNode: Node | null = selection.anchorNode;
+  
+  // If we're in a text node, get its parent element
+  if (currentNode.nodeType === Node.TEXT_NODE) {
+    currentNode = currentNode.parentNode;
+  }
+  
+  // Standard case: If we're not in a heading, enforce paragraph formatting
+  if (currentNode && currentNode.nodeName !== 'H6') {
+    // Force paragraph format for non-heading nodes
+    document.execCommand('formatBlock', false, 'p');
+  }
+};
+
+// Handle mouse selection to ensure formatting is appropriate
+const handleMouseSelection = () => {
+  // Force a formatting check when mouse selection changes
+  ensureProperFormatting();
+  
+  // Also update markdown to ensure consistency
+  updateMarkdown();
+};
+
+// Handle paste operations to prevent formatting issues
+const handlePaste = (event: ClipboardEvent) => {
+  // Prevent the default paste which would include formatting
+  event.preventDefault();
+  
+  // Get plain text from clipboard
+  const text = event.clipboardData?.getData('text/plain') || '';
+  
+  // Insert the plain text at cursor position
+  document.execCommand('insertText', false, text);
+  
+  // Update markdown and check formatting to ensure we haven't inherited unwanted formats
+  updateMarkdown();
+  ensureProperFormatting();
+};
+
 // Initialize the editor
 onMounted(() => {
   if (editorEl.value) {
     // Initialize with a sample prompt
     editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
-    updateMarkdown();
     
-    // Set the initial content as the last saved content
-    lastSavedContent.value = markdownOutput.value;
+    // Ensure proper formatting is applied
+    setTimeout(() => {
+      // Focus the editor
+      editorEl.value?.focus();
+      
+      // Ensure proper formatting
+      ensureProperFormatting();
+      
+      // Update markdown
+      updateMarkdown();
+      
+      // Set the initial content as the last saved content
+      lastSavedContent.value = markdownOutput.value;
+      
+      // Create a cursor position at the beginning of the text
+      const selection = window.getSelection();
+      if (selection && editorEl.value?.firstChild) {
+        const range = document.createRange();
+        range.setStart(editorEl.value.firstChild, 0);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }, 100);
   }
 });
 </script>
