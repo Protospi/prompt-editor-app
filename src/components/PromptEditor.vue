@@ -187,17 +187,19 @@
               <q-icon name="smart_toy" class="q-mr-xs" /> AI Prompt Assistant
             </div>
             
-            <p class="text-body2 q-mb-sm">Describe the prompt you'd like to create or edit:</p>
+            <p class="text-body2 q-mb-sm">Describe the prompt you'd like to create or edit like in the examples below:</p>
             <p class="text-caption text-grey-8 q-mb-md">
-              Example: "I need a prompt that helps a language model act as a coding tutor for beginners" 
-              or "Create a prompt for a storytelling assistant that creates children's stories"
+              <ul>
+              <li>Write me an extraction prompt to extract variables from a conversation.</li>
+              <li>Write me an conversational agent prompt to talk about a hotel services.</li>
+            </ul>
             </p>
             
             <q-input
               v-model="aiPromptInput"
               type="textarea"
               outlined
-              rows="12"
+              rows="10"
               label="Your instructions"
               placeholder="Describe what you want, and the AI will help create or refine your prompt..."
               :disable="isProcessingAiRequest"
