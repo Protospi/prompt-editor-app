@@ -3,7 +3,7 @@
     <div class="header-section">
       <div class="text-h3 q-mb-md text-center" style="color: #6467F2;">Prompt Editor</div>
       <div class="text-subtitle1 q-mb-lg text-center text-grey-7">
-        Edit your prompt like Google Docs with automatic Markdown conversion
+        Edit your prompt in a structured way with markdown output using the AI help and save versions of your prompt in multiple languages
       </div>
     </div>
     <div class="editor-container">
