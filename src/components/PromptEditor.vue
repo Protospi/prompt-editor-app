@@ -362,27 +362,106 @@
       <!-- Markdown Output Card -->
       <q-card class="markdown-card q-mt-md shadow-3">
         <q-card-section class="markdown-header">
-          <div class="text-subtitle1 text-weight-medium" style="color: #6467F2;">
-            <q-icon name="code" class="q-mr-sm" />
-            Markdown Output
-          </div>
-          <div class="text-caption text-grey-7">
-            This is the markdown that will be sent to the AI model
+          <div class="row items-center justify-between">
+            <!-- Left tab -->
+            <div class="col-6">
+              <q-btn 
+                flat 
+                no-caps
+                class="full-width tab-button"
+                :color="activeTab === 'markdown' ? 'primary' : 'grey-7'"
+                :class="{'active-tab': activeTab === 'markdown'}"
+                @click="activeTab = 'markdown'"
+              >
+                <div class="row items-center">
+                  <q-icon name="code" class="q-mr-sm" />
+                  <div class="text-subtitle1 text-weight-medium">Markdown Output</div>
+                </div>
+              </q-btn>
+            </div>
+            
+            <!-- Right tab -->
+            <div class="col-6">
+              <q-btn 
+                flat 
+                no-caps
+                class="full-width tab-button"
+                :color="activeTab === 'versioning' ? 'primary' : 'grey-7'"
+                :class="{'active-tab': activeTab === 'versioning'}"
+                @click="activeTab = 'versioning'"
+              >
+                <div class="row items-center">
+                  <q-icon name="history" class="q-mr-sm" />
+                  <div class="text-subtitle1 text-weight-medium">Versioning Prompt</div>
+                </div>
+              </q-btn>
+            </div>
           </div>
         </q-card-section>
         
         <q-separator />
         
         <q-card-section class="markdown-content">
-          <q-input
-            type="textarea"
-            v-model="markdownOutput"
-            readonly
-            filled
-            autogrow
-            class="markdown-output"
-            bg-color="#f5f5f5"
-          />
+          <!-- Markdown output view -->
+          <div v-if="activeTab === 'markdown'">
+            <div class="text-caption text-grey-7 q-mb-sm">
+              This is the markdown that will be sent to the AI model
+            </div>
+            <q-input
+              type="textarea"
+              v-model="markdownOutput"
+              readonly
+              filled
+              autogrow
+              class="markdown-output"
+              bg-color="#f5f5f5"
+            />
+          </div>
+          
+          <!-- Versioning data view -->
+          <div v-if="activeTab === 'versioning'">
+            <div class="row items-center justify-between q-mb-sm">
+              <div class="text-caption">
+                <div class="text-primary text-weight-medium">Prompt Version Storage Structure</div>
+                <div class="text-grey-7">
+                  This view shows how prompt versions are stored, including the content for each language variant
+                </div>
+              </div>
+              <div class="row items-center">
+                <q-btn 
+                  flat 
+                  dense 
+                  icon="file_download" 
+                  color="primary" 
+                  size="sm"
+                  class="q-mr-sm"
+                  @click="downloadVersionData"
+                >
+                  <q-tooltip>Export as JSON</q-tooltip>
+                </q-btn>
+                <q-toggle
+                  v-model="showFullPromptContent"
+                  label="Show full content"
+                  color="primary"
+                  size="xs"
+                  dense
+                  class="q-mr-sm"
+                />
+                <q-btn 
+                  flat 
+                  round 
+                  dense 
+                  icon="refresh" 
+                  color="primary" 
+                  size="sm"
+                  @click="refreshVersionData"
+                >
+                  <q-tooltip>Refresh version data</q-tooltip>
+                </q-btn>
+              </div>
+            </div>
+            <pre class="version-data-display q-pa-md" v-html="highlightedVersionData"></pre>
+          </div>
         </q-card-section>
       </q-card>
     </div>
@@ -449,6 +528,12 @@ import { useQuasar } from 'quasar';
 
 // Initialize Quasar
 const $q = useQuasar();
+
+// Tab switching for markdown/versioning view
+const activeTab = ref('markdown');
+
+// Toggle for showing full prompt content in version data
+const showFullPromptContent = ref(true);
 
 // Types for the version system
 interface PromptVersion {
@@ -918,6 +1003,9 @@ const saveVersion = () => {
   // If there's a current version, update it
   if (currentVersionIndex.value !== null) {
     updateCurrentVersion();
+    
+    // Switch to versioning tab to show updated data
+    activeTab.value = 'versioning';
     return;
   }
   
@@ -939,6 +1027,9 @@ const saveVersion = () => {
   if (emptySlotIndex !== -1) {
     // We have an empty slot, save to it
     createNewVersion(emptySlotIndex);
+    
+    // Switch to versioning tab to show updated data
+    activeTab.value = 'versioning';
   }
 };
 
@@ -1063,6 +1154,9 @@ const loadVersion = (index: number) => {
   
   // TypeScript assertion to assure it's a valid string
   loadLanguageVariant(index, langToLoad as string);
+  
+  // Switch back to markdown tab when loading a version
+  activeTab.value = 'markdown';
 };
 
 const promptForRename = (index: number) => {
@@ -1955,6 +2049,138 @@ onBeforeUnmount(() => {
     editorEl.value.removeEventListener('copy', handleCopy);
   }
 });
+
+// Computed property to format version data as JSON
+const formattedVersionData = computed(() => {
+  // Create a copy of the data we want to display
+  const versionData = {
+    editorState: {
+      currentVersionIndex: currentVersionIndex.value,
+      selectedLanguage: selectedLanguage.value,
+      currentLoadedLanguage: currentLoadedLanguage.value,
+      hasUnsavedChanges: hasUnsavedChanges.value
+    },
+    // Filter out null entries and only include non-null versions
+    versions: promptVersions.value
+      .map((version, index) => {
+        if (!version) return null;
+        
+        // Get available languages for this version
+        const availableLanguages = getExistingLanguagesForVersion(index);
+        
+        // Build language content map with the actual prompt content
+        const languageContents: Record<string, {
+          content: string;
+          isCurrentlyLoaded: boolean;
+        }> = {};
+        
+        // Add the default language (pt-BR) content
+        if (availableLanguages.includes('pt-BR')) {
+          languageContents['pt-BR'] = {
+            content: showFullPromptContent.value ? version.content : (version.content.length > 50 ? version.content.substring(0, 50) + '...' : version.content),
+            isCurrentlyLoaded: currentVersionIndex.value === index && currentLoadedLanguage.value === 'pt-BR'
+          };
+        }
+        
+        // Add other languages
+        if (version.languages) {
+          Object.keys(version.languages).forEach(lang => {
+            if (version.languages && version.languages[lang] && version.languages[lang].content) {
+              const content = version.languages[lang].content;
+              languageContents[lang] = {
+                content: showFullPromptContent.value ? content : (content.length > 50 ? content.substring(0, 50) + '...' : content),
+                isCurrentlyLoaded: currentVersionIndex.value === index && currentLoadedLanguage.value === lang
+              };
+            }
+          });
+        }
+        
+        // Format version data for display
+        return {
+          versionIndex: index,
+          name: version.name,
+          timestamp: version.timestamp,
+          isCurrent: index === currentVersionIndex.value,
+          availableLanguages,
+          // Include the actual content for each language
+          promptContent: languageContents
+        };
+      })
+      .filter(v => v !== null) // Remove null entries
+  };
+  
+  // Format as pretty JSON with 2-space indentation
+  return JSON.stringify(versionData, null, 2);
+});
+
+// Refresh version data
+const refreshVersionData = () => {
+  // Since our data is reactive, we just need to create an update that triggers reactivity
+  // This will make the formattedVersionData computed property re-evaluate
+  
+  // Create a temporary ref that we update to force reactivity
+  const tempRef = ref(0);
+  tempRef.value++;
+  
+  // Show notification to confirm refresh
+  $q.notify({
+    color: 'info',
+    message: 'Version data refreshed',
+    icon: 'refresh',
+    timeout: 1000
+  });
+};
+
+// Download version data as JSON
+const downloadVersionData = () => {
+  // Create a Blob with the JSON data
+  const blob = new Blob([formattedVersionData.value], { type: 'application/json' });
+  
+  // Create a temporary anchor element to trigger download
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `prompt-versions-${Date.now()}.json`;
+  link.click();
+  
+  // Clean up
+  URL.revokeObjectURL(link.href);
+  
+  // Show notification
+  $q.notify({
+    color: 'positive',
+    message: 'Prompt versions exported as JSON',
+    icon: 'file_download',
+    timeout: 2000
+  });
+};
+
+// Computed property to provide syntax-highlighted version data
+const highlightedVersionData = computed(() => {
+  // Start with the formatted JSON
+  let json = formattedVersionData.value;
+  
+  // Replace with syntax highlighting
+  // First escape HTML
+  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  // Add syntax highlighting with regex replacements
+  // Highlight strings
+  json = json.replace(/"(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?/g, match => {
+    const isKey = /:$/.test(match);
+    return '<span class="' + (isKey ? 'key' : 'string') + '">' + match + '</span>';
+  });
+  
+  // Highlight numbers
+  json = json.replace(/\b(\d+\.\d+|\d+)\b/g, '<span class="number">$1</span>');
+  
+  // Highlight booleans
+  json = json.replace(/\b(true|false)\b/g, '<span class="boolean">$1</span>');
+  
+  // Highlight null
+  json = json.replace(/\bnull\b/g, '<span class="null">null</span>');
+  
+  return json;
+});
 </script>
 
 <style scoped>
@@ -2076,12 +2302,14 @@ onBeforeUnmount(() => {
 
 /* Markdown sections */
 .markdown-header {
-  padding: 12px 16px;
+  padding: 0;
   background-color: #f8f9fa;
 }
 
 .markdown-content {
   padding: 16px;
+  height: 500px;
+  overflow-y: auto;
 }
 
 .markdown-output {
@@ -2179,4 +2407,45 @@ onBeforeUnmount(() => {
 .q-item__section--side .q-btn {
   margin-left: 2px;
 }
+
+/* Tab styling */
+.tab-button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 12px 16px;
+  transition: all 0.2s ease;
+  border-radius: 0;
+}
+
+.tab-button:hover {
+  background-color: #f0f0f0;
+}
+
+.active-tab {
+  background-color: #EBE8FD;
+  font-weight: bold;
+  border-bottom: 2px solid #6467F2;
+}
+
+/* Version data display styling */
+.version-data-display {
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 13px;
+  height: 100%;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  max-height: calc(500px - 40px);
+  color: #333;
+}
+
+.version-data-display .string { color: #008000; }
+.version-data-display .number { color: #0000ff; }
+.version-data-display .boolean { color: #b22222; }
+.version-data-display .null { color: #808080; }
+.version-data-display .key { color: #a52a2a; }
 </style> 
