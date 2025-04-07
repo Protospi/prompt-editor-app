@@ -188,63 +188,64 @@
                           <div>{{ version.name }}</div>
                         </div>
                       </q-item-section>
-                      <q-item-section side class="row no-wrap">
-                        <q-btn flat round dense icon="edit" size="xs" @click.stop="promptForRename(index)">
-                          <q-tooltip>Rename</q-tooltip>
-                        </q-btn>
-                        <q-btn flat round dense icon="delete" size="xs" color="negative" @click.stop="promptForDelete(index)">
-                          <q-tooltip>Delete version</q-tooltip>
-                        </q-btn>
-                        <q-btn flat round dense icon="menu" size="xs" >
-                          <q-menu anchor="bottom right" self="top right" class="language-menu" square>
-                            <q-list class="submenu-list">
-                              <q-item-label header class="submenu-header text-primary">
-                                Languages for {{ version.name }}
-                              </q-item-label>
-                              <q-separator spaced />
-                              
-                              <!-- Languages list - only show languages that actually have content -->
-                              <template v-for="langCode in getExistingLanguagesForVersion(index)" :key="langCode">
-                                <q-item 
-                                  clickable 
-                                  v-close-popup
-                                  @click="loadLanguageVariant(index, langCode)"
-                                  :active="currentVersionIndex === index && currentLoadedLanguage === langCode"
-                                  active-class="bg-primary-1"
-                                  dense
-                                >
-                                  <q-item-section>
-                                    {{ getLanguageLabel(langCode) }} 
-                                    <span v-if="langCode === 'pt-BR'" class="text-caption text-grey-8">(Default)</span>
-                                  </q-item-section>
-                                  <q-item-section side class="row items-center no-wrap">
-                                    <q-icon name="check" size="xs" color="primary" v-if="currentVersionIndex === index && currentLoadedLanguage === langCode" />
-                                    <q-btn 
-                                      v-if="langCode !== 'pt-BR'"
-                                      flat 
-                                      round 
-                                      dense 
-                                      icon="delete" 
-                                      size="xs" 
-                                      color="negative"
-                                      @click.stop="deleteLanguageVariant(index, langCode)"
-                                    >
-                                      <q-tooltip>Delete language variant</q-tooltip>
-                                    </q-btn>
+                      <q-item-section side>
+                        <div class="row items-center">
+                          <q-btn flat round dense icon="edit" size="xs" @click.stop="promptForRename(index)">
+                            <q-tooltip>Rename</q-tooltip>
+                          </q-btn>
+                          <q-btn flat round dense icon="delete" size="xs" color="negative" @click.stop="promptForDelete(index)">
+                            <q-tooltip>Delete version</q-tooltip>
+                          </q-btn>
+                          <q-btn flat round dense icon="keyboard_arrow_right" size="xs">
+                            <q-tooltip>Language options</q-tooltip>
+                            <q-menu anchor="top right" self="top left" class="language-menu" square :offset="[10, 0]">
+                              <q-list class="submenu-list">
+                                
+                                <!-- Languages list - only show languages that actually have content -->
+                                <template v-for="langCode in getExistingLanguagesForVersion(index)" :key="langCode">
+                                  <q-item 
+                                    clickable 
+                                    v-close-popup
+                                    @click="loadLanguageVariant(index, langCode)"
+                                    :active="currentVersionIndex === index && currentLoadedLanguage === langCode"
+                                    active-class="bg-primary-1"
+                                    dense
+                                  >
+                                    <q-item-section>
+                                      <div class="row items-center">
+                                        <span class="flag-icon q-mr-xs">{{ getFlagForLanguage(langCode) }}</span>
+                                        <span>{{ getLanguageLabel(langCode).replace(getFlagForLanguage(langCode), '').trim() }}</span>
+                                        <span v-if="langCode === 'pt-BR'" class="text-caption text-grey-8 q-ml-xs">(Default)</span>
+                                      </div>
+                                    </q-item-section>
+                                    <q-item-section side class="row items-center no-wrap">
+                                      <q-icon name="check" size="xs" color="primary" v-if="currentVersionIndex === index && currentLoadedLanguage === langCode" />
+                                      <q-btn 
+                                        v-if="langCode !== 'pt-BR'"
+                                        flat 
+                                        round 
+                                        dense 
+                                        icon="delete" 
+                                        size="xs" 
+                                        color="negative"
+                                        @click.stop="deleteLanguageVariant(index, langCode)"
+                                      >
+                                        <q-tooltip>Delete language variant</q-tooltip>
+                                      </q-btn>
+                                    </q-item-section>
+                                  </q-item>
+                                </template>
+
+                                <!-- Show a message if no languages -->
+                                <q-item v-if="getExistingLanguagesForVersion(index).length === 0">
+                                  <q-item-section class="text-caption text-grey">
+                                    No languages available
                                   </q-item-section>
                                 </q-item>
-                              </template>
-
-                              <!-- Show a message if no languages -->
-                              <q-item v-if="getExistingLanguagesForVersion(index).length === 0">
-                                <q-item-section class="text-caption text-grey">
-                                  No languages available
-                                </q-item-section>
-                              </q-item>
-                            </q-list>
-                          </q-menu>
-                          <q-tooltip>Language options</q-tooltip>
-                        </q-btn>
+                              </q-list>
+                            </q-menu>
+                          </q-btn>
+                        </div>
                       </q-item-section>
                     </q-item>
                   </template>
@@ -2000,12 +2001,15 @@ onBeforeUnmount(() => {
   margin-right: 0;
 }
 
+/* Language menu styling */
 .language-menu {
   max-height: 400px;
   overflow-y: auto;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
   border-radius: 4px;
   min-width: 200px;
+  border-left: 1px solid #e0e0e0;
+  margin-left: -1px;
 }
 
 .submenu-list {
@@ -2158,5 +2162,21 @@ onBeforeUnmount(() => {
 /* Add a placeholder animation for the loading state */
 .ai-editor-container .q-spinner-dots {
   font-size: 2em;
+}
+
+/* Version selector styling */
+.version-selector :deep(.q-btn-dropdown__arrow) {
+  margin-left: 4px;
+}
+
+/* Ensure action buttons in version menu are horizontally aligned */
+.q-item__section--side > .row {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Make sure the right arrow icon is properly visible */
+.q-item__section--side .q-btn {
+  margin-left: 2px;
 }
 </style> 
