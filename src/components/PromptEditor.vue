@@ -310,6 +310,8 @@
             @paste="handlePaste"
             @blur="ensureProperFormatting"
             @copy="handleCopy"
+            @compositionstart="handleCompositionStart"
+            @compositionend="handleCompositionEnd"
           ></div>
           
           <!-- AI editor mode when AI mode is on -->
@@ -952,67 +954,74 @@ const formatAsTitle = () => {
 
 // Handle keydown events for tabs in lists and enter in headings
 const handleKeyDown = (event: KeyboardEvent) => {
-  // Tab in lists for indentation
-  if (event.key === 'Tab' && isInList()) {
-    event.preventDefault();
+  try {
+    // Skip if we're in IME composition mode (for special characters)
+    if (isComposing.value) return;
     
-    if (event.shiftKey) {
-      document.execCommand('outdent', false);
-    } else {
-      document.execCommand('indent', false);
-    }
-    
-    updateMarkdown();
-  }
-  
-  // Handle Enter key to prevent heading style from being applied to the next line
-  if (event.key === 'Enter') {
-    // Always prevent the default Enter behavior to have full control
-    event.preventDefault();
-    
-    const selection = window.getSelection();
-    if (!selection || !selection.anchorNode) return;
-    
-    // Find the current node and its parent element
-    let currentNode: Node | null = selection.anchorNode;
-    
-    // If we're in a text node, get its parent
-    if (currentNode.nodeType === Node.TEXT_NODE) {
-      currentNode = currentNode.parentNode;
-    }
-    
-    // Check if we're in a heading element or any of its parents
-    let tempNode = currentNode;
-    
-    while (tempNode) {
-      if (tempNode.nodeName === 'H6') {
-        break;
+    // Tab in lists for indentation
+    if (event.key === 'Tab' && isInList()) {
+      event.preventDefault();
+      
+      if (event.shiftKey) {
+        document.execCommand('outdent', false);
+      } else {
+        document.execCommand('indent', false);
       }
-      tempNode = tempNode.parentNode;
+      
+      updateMarkdown();
     }
     
-    // Explicitly create a new paragraph after either a heading or regular paragraph
-    if (editorEl.value) {
-      // First, insert a line break to create a new paragraph
-      document.execCommand('insertParagraph', false);
+    // Handle Enter key to prevent heading style from being applied to the next line
+    if (event.key === 'Enter') {
+      // Always prevent the default Enter behavior to have full control
+      event.preventDefault();
       
-      // Immediately force paragraph format on the newly created paragraph
-      document.execCommand('formatBlock', false, 'p');
+      const selection = window.getSelection();
+      if (!selection || !selection.anchorNode) return;
       
-      // Get the current node again after inserting the paragraph
-      currentNode = selection.anchorNode;
-      if (currentNode && currentNode.nodeType === Node.TEXT_NODE) {
+      // Find the current node and its parent element
+      let currentNode: Node | null = selection.anchorNode;
+      
+      // If we're in a text node, get its parent
+      if (currentNode.nodeType === Node.TEXT_NODE) {
         currentNode = currentNode.parentNode;
       }
       
-      // If we found a node and it's not already a paragraph, force paragraph format again
-      if (currentNode && currentNode.nodeName !== 'P') {
-        document.execCommand('formatBlock', false, 'p');
+      // Check if we're in a heading element or any of its parents
+      let tempNode = currentNode;
+      
+      while (tempNode) {
+        if (tempNode.nodeName === 'H6') {
+          break;
+        }
+        tempNode = tempNode.parentNode;
       }
       
-      // Update the markdown output
-      updateMarkdown();
+      // Explicitly create a new paragraph after either a heading or regular paragraph
+      if (editorEl.value) {
+        // First, insert a line break to create a new paragraph
+        document.execCommand('insertParagraph', false);
+        
+        // Immediately force paragraph format on the newly created paragraph
+        document.execCommand('formatBlock', false, 'p');
+        
+        // Get the current node again after inserting the paragraph
+        currentNode = selection.anchorNode;
+        if (currentNode && currentNode.nodeType === Node.TEXT_NODE) {
+          currentNode = currentNode.parentNode;
+        }
+        
+        // If we found a node and it's not already a paragraph, force paragraph format again
+        if (currentNode && currentNode.nodeName !== 'P') {
+          document.execCommand('formatBlock', false, 'p');
+        }
+        
+        // Update the markdown output
+        updateMarkdown();
+      }
     }
+  } catch (error) {
+    console.error('Error handling keydown:', error);
   }
 };
 
@@ -1031,25 +1040,48 @@ const isInList = (): boolean => {
   return false;
 };
 
+// Add a ref to track if we're in IME composition mode
+const isComposing = ref(false);
+
+// Handle the start of IME composition (for special characters)
+const handleCompositionStart = () => {
+  isComposing.value = true;
+};
+
+// Handle the end of IME composition (for special characters)
+const handleCompositionEnd = (event: CompositionEvent) => {
+  isComposing.value = false;
+  
+  // Make sure to update the markdown with the composed text
+  updateMarkdown();
+};
+
 // Update markdown output
 const updateMarkdown = () => {
+  // Skip updates during IME composition to prevent breaking special character input
+  if (isComposing.value) return;
+  
   if (editorEl.value) {
-    // Special handling for editor state
-    const firstChild = editorEl.value.firstChild;
-    
-    // If the editor has content but isn't properly wrapped in blocks, fix it
-    if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
-      // Wrap loose text in paragraphs for proper formatting
-      const text = editorEl.value.textContent || '';
-      editorEl.value.innerHTML = `<p>${text}</p>`;
+    try {
+      // Special handling for editor state
+      const firstChild = editorEl.value.firstChild;
+      
+      // If the editor has content but isn't properly wrapped in blocks, fix it
+      if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
+        // Wrap loose text in paragraphs for proper formatting
+        const text = editorEl.value.textContent || '';
+        editorEl.value.innerHTML = `<p>${text}</p>`;
+      }
+      
+      // Continue with normal formatting checks
+      ensureProperFormatting();
+      
+      // Update the markdown output from the current HTML content
+      const html = editorEl.value.innerHTML;
+      markdownOutput.value = turndownService.turndown(html);
+    } catch (error) {
+      console.error('Error updating markdown:', error);
     }
-    
-    // Continue with normal formatting checks
-    ensureProperFormatting();
-    
-    // Update the markdown output
-    const html = editorEl.value.innerHTML;
-    markdownOutput.value = turndownService.turndown(html);
   }
 };
 
@@ -1468,14 +1500,31 @@ const applyAiGeneratedPrompt = (markdownText: string) => {
   setTimeout(() => {
     if (!editorEl.value) return;
     
-    // Set the content to the editor element
-    editorEl.value.innerHTML = htmlContent;
-    
-    // Manually update the markdown output to reflect the AI-generated content
-    updateMarkdown();
-    
-    console.log('AI content applied:', htmlContent);
-    console.log('Markdown updated:', markdownOutput.value);
+    try {
+      // Use sanitizeHtml to clean the content before applying
+      const sanitizedHtml = sanitizeHtml(htmlContent);
+      
+      // Remember the current scroll position
+      const scrollPos = editorEl.value.scrollTop;
+      
+      // Set the content to the editor element
+      editorEl.value.innerHTML = sanitizedHtml;
+      
+      // Restore scroll position
+      editorEl.value.scrollTop = scrollPos;
+      
+      // Manually update the markdown output to reflect the AI-generated content
+      // But don't run any post-processing to avoid breaking special characters
+      markdownOutput.value = turndownService.turndown(sanitizedHtml);
+      
+      console.log('AI content applied:', htmlContent);
+      console.log('Markdown updated:', markdownOutput.value);
+    } catch (error) {
+      console.error('Error applying AI content:', error);
+      // Fallback to simple insertion
+      editorEl.value.innerHTML = htmlContent;
+      markdownOutput.value = turndownService.turndown(htmlContent);
+    }
   }, 100);
 };
 
