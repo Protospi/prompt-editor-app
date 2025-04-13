@@ -93,6 +93,19 @@
                 <q-tooltip>{{ aiModeActive ? 'Return to editor' : 'Use AI assistant to help with your prompt' }}</q-tooltip>
               </q-btn>
 
+              <!-- New Diagram Button -->
+              <q-btn 
+                flat 
+                dense
+                :icon="diagramModeActive ? 'edit' : 'account_tree'"
+                size="md"
+                :color="diagramModeActive ? 'positive' : '#6467F2'"
+                class="title-button q-mr-xs"  
+                @click="submitDiagramPrompt"
+              >
+                <q-tooltip>{{ diagramModeActive ? 'Return to editor' : 'Create flow diagram' }}</q-tooltip>
+              </q-btn>
+
             </div>
             
             <!-- Right side version controls -->
@@ -284,7 +297,7 @@
         <q-card-section class="editor-content">
           <!-- Regular editor when AI mode is off -->
           <div 
-            v-if="!aiModeActive"
+            v-if="!aiModeActive && !diagramModeActive"
             ref="editorEl" 
             class="editor" 
             contenteditable="true" 
@@ -350,6 +363,29 @@
                   <q-spinner-dots />
                 </template>
                 <q-tooltip>Generate AI suggestions based on your instructions</q-tooltip>
+              </q-btn>
+            </div>
+          </div>
+
+          <!-- Diagram editor mode when diagram mode is on -->
+          <div v-if="diagramModeActive" class="diagram-container">
+            <div class="text-subtitle1 q-mb-md">
+              <q-icon name="account_tree" class="q-mr-xs" /> Flow Diagram
+            </div>
+            
+            <div class="diagram-content q-mb-md" ref="diagramEl"></div>
+            
+            <!-- Action buttons at the bottom -->
+            <div class="row justify-end q-mt-md">
+              <q-btn 
+                label="Back to Editor" 
+                color="grey-7" 
+                @click="toggleDiagramMode" 
+                flat
+                class="q-mr-sm"
+                icon="arrow_back"
+              >
+                <q-tooltip>Return to the regular editor without changes</q-tooltip>
               </q-btn>
             </div>
           </div>
@@ -525,15 +561,51 @@
 import { ref, onMounted, computed, onBeforeUnmount } from 'vue';
 import turndown from 'turndown';
 import { useQuasar } from 'quasar';
+import mermaid from 'mermaid';
 
 // Initialize Quasar
 const $q = useQuasar();
+
+// Helper to get the API token - tries environment variables first, then falls back to a hardcoded value
+// from the cURL command for development purposes
+const getApiToken = () => {
+  // First try the environment variable
+  const envToken = import.meta.env.VITE_API_TOKEN;
+  if (envToken) {
+    console.log('Using token from environment variable');
+    return envToken;
+  }
+  
+  // If that fails, use the token from the cURL command as fallback
+  console.log('Using hardcoded fallback token');
+  return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjoxNDQ2NjU3LCJncm91cElkIjoiNjc0NGRkZjk5MGM2MjIxZjUyNzY4MjkwIiwiYWNjb3VudElkIjoiNjc0NGRlMTk5MGM2MjIxZjUyNzY4OWIyIiwidW5pdHMiOltdLCJhY2NvdW50cyI6W10sIl9pZCI6IjYyOWEzZDI0MmVmMTUzMGIxODA4Y2Y5YSIsIm5hbWUiOiJQZWRybyBMb2VzIiwiZW1haWwiOiJwZWRyby5sb2VzQHNtYXJ0dGFsa3MuYWkiLCJhdmF0YXIiOiJodHRwczovL2NvbnRlbnQuc21hcnR0YWxrcy5haS82MjRmNDU2OTJjZDExZTM0NTE4MGJmZDEvMTczMzkzOTU5MDE2Ny1ibG9iIiwicm9sZSI6Ikd1aWRlciIsImRlcGFydG1lbnQiOiI2MmYzZTA4NGRkZDBjOGUzODIyMjg5YjkiLCJwZXJtaXNzaW9uc0dyb3VwcyI6WyI2MzJiNWQ1ODUxN2I4N2EzNTQ5MGIzYmEiXSwic2V0dGluZ3MiOnsiaXNNb2JpbGUiOmZhbHNlLCJ2b2x1bWUiOjAuNSwiaXNCZXRhVGVzdGVyIjpmYWxzZSwiaGFzRmxvd0FjY2VzcyI6ZmFsc2UsImhhc0FnZW50QWNjZXNzIjpmYWxzZSwidGltZXpvbmUiOiJFdGMvR01UKzMiLCJsb2NhbGl6YXRpb24iOiJwdC1CUiIsInNob3dOb3RpZmljYXRpb24iOnRydWUsImFsbEludGVyYWN0aW9ucyI6dHJ1ZSwiZ3JvdXBJbnRlcmFjdGlvbnMiOnRydWUsIm15UXVldWVzIjp0cnVlLCJvcmRlckJ5IjoiZGVjcmVhc2luZ0Fycml2YWxEYXRlIiwic2hvd0NoYW5uZWwiOmZhbHNlLCJzaG93RGl2aXNpb25CeVF1ZXVlcyI6ZmFsc2UsInNob3dOb3RpZmljYXRpb25Db3VudCI6ZmFsc2UsInNob3dUYWdzIjpmYWxzZSwic2hvd1RpbWVyIjpmYWxzZSwic2hvd1RvdGFsSW50ZXJhY3Rpb25zIjpmYWxzZSwid2FybmluZ0xpbWl0IjoxfSwibG9jYWxpemF0aW9uIjoicHQtQlIiLCJ0aW1lem9uZSI6IkV0Yy9HTVQrMyIsImlzR3VpZGVyIjp0cnVlLCJtb2R1bGVzUGVybWlzc2lvbnMiOlt7Im5hbWUiOiJhZG1pbiIsInBlcm1pc3Npb24iOiJ3cml0ZSIsIl9pZCI6IjYzMmI1ZDU4NTE3Yjg3YTM1NDkwYjNiYyJ9XSwiY2FuU2VlQWxsUXVldWVzIjp0cnVlLCJjYW5Bc3NpZ24iOnRydWUsImNhblRyYW5zZmVyIjp0cnVlLCJjYW5GaW5pc2giOnRydWUsImNhbEhzbSI6dHJ1ZSwiY2FuUmVtb3ZlQ29udGFjdCI6dHJ1ZSwiY2FuRXhwb3J0SW50ZXJhY3Rpb25zIjp0cnVlLCJjYW5TZWVBbGxJbnRlcmFjdGlvbnMiOnRydWUsImNhblNlbmRBdWRpbyI6dHJ1ZSwiZW50aXRpZXMiOltdLCJyZWNlaXZlQXV0b21hdGVkQXR0ZW5kYW5jZXMiOmZhbHNlLCJhdmFpbGFiaWxpdHkiOiJvZmZsaW5lIiwicHJvZmlsZSI6ImF0dGVuZGFudCIsImVtYWlsU2lnbmF0dXJlIjoiLS0tPGJyPjxicj5QZWRybyBMb2VzIiwiaWF0IjoxNzQ0MjI5Mjc2LCJleHAiOjE3NDQ4MzQwNzZ9.O-O3y0pG28fFBieEL6ClfOnrYrYPMVwVfBXJIdwEy00';
+};
+
+// Initialize Mermaid
+onMounted(() => {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'default',
+    securityLevel: 'loose',
+  });
+});
 
 // Tab switching for markdown/versioning view
 const activeTab = ref('markdown');
 
 // Toggle for showing full prompt content in version data
 const showFullPromptContent = ref(true);
+
+// Diagram mode state
+const diagramModeActive = ref(false);
+const diagramEl = ref<HTMLElement | null>(null);
+const isProcessingDiagramRequest = ref(false);
+
+// Toggle diagram mode
+const toggleDiagramMode = () => {
+  // Toggle the mode
+  diagramModeActive.value = !diagramModeActive.value;
+};
 
 // Types for the version system
 interface PromptVersion {
@@ -1252,16 +1324,12 @@ const submitAiPrompt = async () => {
   isProcessingAiRequest.value = true;
   
   try {
-    // Prepare the payload
-    const payload = {
-      payload: {
-        prompt: `This is my current prompt:\n${markdownOutput.value}\n\nThis is my instructions:\n${aiPromptInput.value}`
-      }
-    };
-    
     // Get API config from env vars
-    const apiUrl = import.meta.env.VITE_API_URL;
-    const apiToken = import.meta.env.VITE_API_TOKEN;
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3008/v1/platformagents/createPromptEditor';
+    const apiToken = getApiToken();
+
+    console.log('API URL:', apiUrl);
+    console.log('API Token preview:', apiToken ? `${apiToken.substring(0, 10)}...` : 'No token found');
     
     // Make the API request
     const response = await fetch(apiUrl, {
@@ -1270,11 +1338,23 @@ const submitAiPrompt = async () => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiToken}`
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        agent: "promptEditor",
+        payload: {
+          prompt: `This is my current prompt:\n${markdownOutput.value}\n\nThis is my instructions:\n${aiPromptInput.value}`
+        }
+      })
     });
     
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      const errorBody = await response.text().catch(() => 'Could not read error response');
+      console.error('API Error details:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries([...response.headers.entries()]),
+        body: errorBody
+      });
+      throw new Error(`API error: ${response.status} - ${response.statusText}`);
     }
     
     const data = await response.json();
@@ -2181,6 +2261,100 @@ const highlightedVersionData = computed(() => {
   
   return json;
 });
+
+// AI Diagram Generator
+const submitDiagramPrompt = async () => {
+  // If we're already in diagram mode, toggle back to editor
+  if (diagramModeActive.value) {
+    diagramModeActive.value = false;
+    return;
+  }
+
+  isProcessingDiagramRequest.value = true;
+  
+  try {
+    // Get API config from env vars
+    const apiUrl = import.meta.env.VITE_API_URL_DIAGRAM || 'http://localhost:3008/v1/platformagents/createDiagram';
+    const apiToken = import.meta.env.VITE_API_TOKEN;
+    
+    console.log('Sending diagram request to:', apiUrl);
+    console.log('API Token preview:', apiToken ? `${apiToken.substring(0, 10)}...` : 'No token found');
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`
+      },
+      body: JSON.stringify({
+        agent: "diagram",
+        payload: {
+          prompt: markdownOutput.value
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'Could not read error response');
+      console.error('API Error details:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries([...response.headers.entries()]),
+        body: errorBody
+      });
+      throw new Error(`API error: ${response.status} - ${response.statusText}`);
+    }
+    console.log('Diagram generation response:', response);
+    
+    // Read the response as text instead of trying to parse as JSON
+    const diagramText = await response.text();
+    console.log('Diagram generation response:', diagramText);
+    
+    // Toggle diagram mode to show the diagram
+    diagramModeActive.value = true;
+    
+    // Wait for the DOM to update
+    setTimeout(() => {
+      // Then render the response diagram
+      if (diagramText) {
+        if (diagramEl.value) {
+          // Clear previous content
+          diagramEl.value.innerHTML = '';
+          
+          // Create a div for mermaid
+          const mermaidDiv = document.createElement('div');
+          mermaidDiv.className = 'mermaid';
+          mermaidDiv.textContent = diagramText;
+          
+          // Add to DOM
+          diagramEl.value.appendChild(mermaidDiv);
+          
+          // Render the diagram
+          mermaid.run({ nodes: [mermaidDiv] }).catch(error => {
+            console.error('Error rendering mermaid diagram:', error);
+          });
+        }
+        
+      } else {
+        throw new Error('Invalid API response format');
+      }
+    }, 100);
+  } catch (error) {
+    console.error('Error calling AI Diagram API:', error);
+    
+    $q.notify({
+      color: 'negative',
+      message: `Error generating AI diagram: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      icon: 'error',
+      timeout: 5000,
+      position: 'top'
+    });
+  } finally {
+    // Reset the processing state
+    isProcessingDiagramRequest.value = false;
+  }
+};
 </script>
 
 <style scoped>
@@ -2448,4 +2622,42 @@ const highlightedVersionData = computed(() => {
 .version-data-display .boolean { color: #b22222; }
 .version-data-display .null { color: #808080; }
 .version-data-display .key { color: #a52a2a; }
+
+/* Diagram container styles */
+.diagram-container {
+  height: 100%;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.diagram-container .text-subtitle1 {
+  font-weight: 500;
+  color: #6467F2;
+}
+
+.diagram-content {
+  flex-grow: 1;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  padding: 16px;
+  overflow: auto;
+  min-height: 350px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mermaid diagram styling */
+:deep(.mermaid) {
+  width: 100%;
+  text-align: center;
+}
+
+:deep(.mermaid svg) {
+  max-width: 100%;
+  height: auto;
+}
 </style> 

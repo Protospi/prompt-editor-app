@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.4",
+    "mermaid": "^11.6.0",
     "quasar": "^2.16.0",
     "turndown": "^7.2.0",
     "vue": "^3.4.18",
