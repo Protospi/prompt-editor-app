@@ -1049,7 +1049,7 @@ const handleCompositionStart = () => {
 };
 
 // Handle the end of IME composition (for special characters)
-const handleCompositionEnd = (event: CompositionEvent) => {
+const handleCompositionEnd = () => {
   isComposing.value = false;
   
   // Make sure to update the markdown with the composed text
