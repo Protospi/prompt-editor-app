@@ -607,6 +607,46 @@ const isProcessingDiagramRequest = ref(false);
 const toggleDiagramMode = () => {
   // Toggle the mode
   diagramModeActive.value = !diagramModeActive.value;
+  
+  if (!diagramModeActive.value) {
+    // Exiting diagram mode - ensure editor content is properly restored
+    setTimeout(() => {
+      // Add a small delay to ensure the DOM has updated
+      if (editorEl.value) {
+        // Force re-render of the editor if needed
+        const currentHtml = editorEl.value.innerHTML;
+        if (!currentHtml || currentHtml.trim() === '') {
+          // Check if we have a current version loaded
+          if (currentVersionIndex.value !== null) {
+            // Load the current version content
+            const version = promptVersions.value[currentVersionIndex.value];
+            if (version) {
+              if (selectedLanguage.value === 'pt-BR' && version.html) {
+                editorEl.value.innerHTML = version.html;
+              } else if (version.languages && 
+                      selectedLanguage.value in version.languages && 
+                      version.languages[selectedLanguage.value]?.html) {
+                editorEl.value.innerHTML = version.languages[selectedLanguage.value]?.html || '';
+              } else if (version.html) {
+                // Fallback to PT-BR if selected language isn't available
+                editorEl.value.innerHTML = version.html;
+              } else {
+                // Default if no HTML content is available
+                editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+              }
+            } else {
+              // Default content if no version is loaded
+              editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+            }
+          } else {
+            // Default content if no version is loaded
+            editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+          }
+          updateMarkdown();
+        }
+      }
+    }, 0);
+  }
 };
 
 // Types for the version system
@@ -1334,7 +1374,32 @@ const toggleAiMode = () => {
         // Force re-render of the editor if needed
         const currentHtml = editorEl.value.innerHTML;
         if (!currentHtml || currentHtml.trim() === '') {
-          editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+          // Check if we have a current version loaded
+          if (currentVersionIndex.value !== null) {
+            // Load the current version content
+            const version = promptVersions.value[currentVersionIndex.value];
+            if (version) {
+              if (selectedLanguage.value === 'pt-BR' && version.html) {
+                editorEl.value.innerHTML = version.html;
+              } else if (version.languages && 
+                      selectedLanguage.value in version.languages && 
+                      version.languages[selectedLanguage.value]?.html) {
+                editorEl.value.innerHTML = version.languages[selectedLanguage.value]?.html || '';
+              } else if (version.html) {
+                // Fallback to PT-BR if selected language isn't available
+                editorEl.value.innerHTML = version.html;
+              } else {
+                // Default if no HTML content is available
+                editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+              }
+            } else {
+              // Default content if no version is loaded
+              editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+            }
+          } else {
+            // Default content if no version is loaded
+            editorEl.value.innerHTML = '<p>Comece a escrever seu prompt aqui...</p>';
+          }
           updateMarkdown();
         }
       }
