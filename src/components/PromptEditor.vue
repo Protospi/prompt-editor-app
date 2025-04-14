@@ -371,11 +371,41 @@
 
           <!-- Diagram editor mode when diagram mode is on -->
           <div v-if="diagramModeActive" class="diagram-container">
-            <div class="text-subtitle1 q-mb-md">
-              <q-icon name="account_tree" class="q-mr-xs" /> Flow Diagram
+            <div class="text-subtitle1 q-mb-md row items-center justify-between">
+              <div class="row items-center">
+                <q-icon name="account_tree" class="q-mr-xs" /> Flow Diagram
+              </div>
+              <!-- Zoom controls moved to title row -->
+              <div class="diagram-zoom-controls">
+                <span class="zoom-level">{{ Math.round(diagramZoom * 100) }}%</span>
+                <q-btn
+                  flat
+                  dense
+                  round
+                  icon="add"
+                  color="grey-7"
+                  @click="zoomIn"
+                  size="sm"
+                >
+                  <q-tooltip>Zoom in</q-tooltip>
+                </q-btn>
+                <q-btn
+                  flat
+                  dense
+                  round
+                  icon="remove"
+                  color="grey-7"
+                  @click="zoomOut"
+                  size="sm"
+                >
+                  <q-tooltip>Zoom out</q-tooltip>
+                </q-btn>
+              </div>
             </div>
             
-            <div class="diagram-content q-mb-md" ref="diagramEl"></div>
+            <div class="diagram-content q-mb-md" ref="diagramEl">
+              <!-- Zoom controls moved to title row -->
+            </div>
             
             <!-- Action buttons at the bottom -->
             <div class="row justify-end q-mt-md">
@@ -602,13 +632,182 @@ const showFullPromptContent = ref(true);
 const diagramModeActive = ref(false);
 const diagramEl = ref<HTMLElement | null>(null);
 const isProcessingDiagramRequest = ref(false);
+// Diagram zoom state
+const diagramZoom = ref(1);
+const minZoom = 0.5;
+const maxZoom = 2.5;
+const zoomStep = 0.1;
+// Diagram drag state
+const isDragging = ref(false);
+const dragStartPos = ref({ x: 0, y: 0 });
+const currentTranslate = ref({ x: 0, y: 0 });
+
+// Zoom functions
+const zoomIn = () => {
+  if (diagramZoom.value < maxZoom) {
+    diagramZoom.value = Math.min(diagramZoom.value + zoomStep, maxZoom);
+    applyZoom();
+    console.log('Zoom in:', diagramZoom.value);
+  }
+};
+
+const zoomOut = () => {
+  if (diagramZoom.value > minZoom) {
+    diagramZoom.value = Math.max(diagramZoom.value - zoomStep, minZoom);
+    applyZoom();
+    console.log('Zoom out:', diagramZoom.value);
+  }
+};
+
+const applyZoom = () => {
+  if (diagramEl.value) {
+    const svgElement = diagramEl.value.querySelector('.mermaid svg');
+    
+    if (svgElement) {
+      // Apply zoom and translation to the SVG
+      (svgElement as HTMLElement).style.transform = 
+        `translate(${currentTranslate.value.x}px, ${currentTranslate.value.y}px) scale(${diagramZoom.value})`;
+      (svgElement as HTMLElement).style.transformOrigin = 'center center';
+      
+      // Update zoom display if needed
+      console.log(`Current zoom: ${Math.round(diagramZoom.value * 100)}%`);
+    }
+  }
+};
+
+// Drag functions
+const startDrag = (event: MouseEvent) => {
+  if (!diagramModeActive.value) return;
+  
+  // Only initiate drag if we're clicking on the diagram content but not on any diagram node
+  const target = event.target as HTMLElement;
+  if (target.closest('.diagram-zoom-controls')) return;
+  
+  isDragging.value = true;
+  dragStartPos.value = { x: event.clientX, y: event.clientY };
+  
+  // Set cursor to indicate dragging
+  if (diagramEl.value) {
+    diagramEl.value.style.cursor = 'grabbing';
+  }
+  
+  console.log('Started dragging', dragStartPos.value);
+};
+
+const doDrag = (event: MouseEvent) => {
+  if (!isDragging.value || !diagramModeActive.value) return;
+  
+  const dx = event.clientX - dragStartPos.value.x;
+  const dy = event.clientY - dragStartPos.value.y;
+  
+  // Update current translation
+  currentTranslate.value = {
+    x: currentTranslate.value.x + dx,
+    y: currentTranslate.value.y + dy
+  };
+  
+  // Update drag start position for next movement
+  dragStartPos.value = { x: event.clientX, y: event.clientY };
+  
+  // Apply the transform
+  applyZoom();
+  
+  console.log('Dragging', currentTranslate.value);
+};
+
+const endDrag = () => {
+  if (!isDragging.value) return;
+  
+  isDragging.value = false;
+  
+  // Reset cursor
+  if (diagramEl.value) {
+    diagramEl.value.style.cursor = 'grab';
+  }
+  
+  console.log('Ended dragging');
+};
+
+// Handle mouse wheel zoom on diagram
+const handleDiagramWheel = (event: WheelEvent) => {
+  if (diagramModeActive.value) {
+    // Prevent the default scroll behavior
+    event.preventDefault();
+    event.stopPropagation();
+    
+    console.log('Wheel event detected', event.deltaY);
+    
+    if (event.deltaY < 0) {
+      // Scrolling up - zoom in
+      zoomIn();
+    } else {
+      // Scrolling down - zoom out
+      zoomOut();
+    }
+  }
+};
+
+// Function to set up diagram zoom event listeners
+const setupDiagramZoom = () => {
+  if (diagramEl.value) {
+    // First remove any existing listener to avoid duplicates
+    diagramEl.value.removeEventListener('wheel', handleDiagramWheel as EventListener);
+    
+    // Then add the listener with the passive option set to false to allow preventDefault
+    diagramEl.value.addEventListener('wheel', handleDiagramWheel as EventListener, { passive: false });
+    
+    // Add drag listeners
+    diagramEl.value.removeEventListener('mousedown', startDrag);
+    diagramEl.value.addEventListener('mousedown', startDrag);
+    
+    // Add global mouse move and up listeners
+    document.removeEventListener('mousemove', doDrag);
+    document.addEventListener('mousemove', doDrag);
+    
+    document.removeEventListener('mouseup', endDrag);
+    document.addEventListener('mouseup', endDrag);
+    
+    // Set initial cursor style
+    diagramEl.value.style.cursor = 'grab';
+    
+    // Also try to attach directly to the SVG once it's available
+    setTimeout(() => {
+      const svgElement = diagramEl.value?.querySelector('.mermaid svg');
+      if (svgElement) {
+        svgElement.removeEventListener('wheel', handleDiagramWheel as EventListener);
+        svgElement.addEventListener('wheel', handleDiagramWheel as EventListener, { passive: false });
+      }
+    }, 500);
+    
+    console.log('Wheel event listeners set up for diagram zooming');
+  }
+};
 
 // Toggle diagram mode
 const toggleDiagramMode = () => {
   // Toggle the mode
   diagramModeActive.value = !diagramModeActive.value;
   
-  if (!diagramModeActive.value) {
+  if (diagramModeActive.value) {
+    // Reset zoom and position when entering diagram mode
+    diagramZoom.value = 1;
+    currentTranslate.value = { x: 0, y: 0 };
+    isDragging.value = false;
+    
+    // Add wheel event listener for zooming and mouse drag for panning
+    setTimeout(() => {
+      setupDiagramZoom();
+    }, 200);
+  } else {
+    // Remove event listeners when exiting diagram mode
+    if (diagramEl.value) {
+      diagramEl.value.removeEventListener('wheel', handleDiagramWheel as EventListener);
+      diagramEl.value.removeEventListener('mousedown', startDrag);
+      document.removeEventListener('mousemove', doDrag);
+      document.removeEventListener('mouseup', endDrag);
+      console.log('Event listeners removed');
+    }
+    
     // Exiting diagram mode - ensure editor content is properly restored
     setTimeout(() => {
       // Add a small delay to ensure the DOM has updated
@@ -2447,6 +2646,16 @@ const submitDiagramPrompt = async () => {
           // Render the diagram
           mermaid.run({ nodes: [mermaidDiv] }).catch(error => {
             console.error('Error rendering mermaid diagram:', error);
+          }).finally(() => {
+            // Apply initial zoom after diagram is rendered and setup interaction
+            setTimeout(() => {
+              // Reset the position and zoom
+              currentTranslate.value = { x: 0, y: 0 };
+              diagramZoom.value = 1;
+              
+              applyZoom();
+              setupDiagramZoom();
+            }, 100);
           });
         }
         
@@ -2762,16 +2971,44 @@ const submitDiagramPrompt = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+/* Zoom controls styling */
+.diagram-zoom-controls {
+  display: flex;
+  gap: 4px;
+  background-color: rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  padding: 2px 6px;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  align-items: center;
+}
+
+.zoom-level {
+  font-size: 12px;
+  color: #666;
+  margin-right: 4px;
+  min-width: 40px;
+  text-align: center;
 }
 
 /* Mermaid diagram styling */
 :deep(.mermaid) {
   width: 100%;
   text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  overflow: hidden;
 }
 
 :deep(.mermaid svg) {
   max-width: 100%;
   height: auto;
+  transition: transform 0.2s ease;
+  transform-origin: center center;
 }
 </style> 
